@@ -78,6 +78,17 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
     pretrained = T5ForConditionalGeneration.from_pretrained(cfg.model_path)
     model = T5CrossEncoder.from_t5_for_conditional_generation(pretrained)
+    if torch.cuda.is_available():
+        device = torch.device("cuda:{}".format(cfg.gpu_id))
+        logger.info('There are %d GPU(s) available.' % torch.cuda.device_count())
+        logger.info('We will use the GPU:{}, {}'.format(torch.cuda.get_device_name(cfg.gpu_id), torch.cuda.get_device_capability(cfg.gpu_id)))
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+        logger.info("MPS backend is available, using MPS.")
+    else:
+        logger.info('No GPU available, using the CPU instead.')
+        device = torch.device("cpu")
+    model.to(device)
     optimizer = get_optimizer(
         model, learning_rate=cfg.learning_rate, adam_eps=cfg.adam_eps, weight_decay=cfg.weight_decay)
 
@@ -151,6 +162,7 @@ def main():
     # trainer
     trainer = CrossEncoderTrainer(
         config=cfg,
+        device=device,
         model=model,
         tokenizer=tokenizer,
         train_dataloader=train_dataloader,

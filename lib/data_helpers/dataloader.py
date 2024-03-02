@@ -52,16 +52,22 @@ def get_collate_fn(
             if not involved_summaries:
                 continue
 
-            article = item["article"]
+            pretokenized = item.get("pretokenized")
             generators = []
-            item_input_ids = []
+            item_inputs_ids = []
+            comparisons = {k: v.get("preferred") for k, v in item["comparisons"].items() if v.get("preferred") in {1, -1}}
             for g, summary in involved_summaries.items():
                 generators.append(g)
-                g_input_ids = encode_texts(tokenizer, article, summary, sep_token=sep_token, eos_token=tokenizer.eos_token)
-                item_input_ids.append(g_input_ids)
-            item_inputs = do_pad(item_input_ids, pad_token_id=tokenizer.pad_token_id)
+                if pretokenized is None:
+                    g_input_ids = encode_texts(tokenizer, item["article"], summary, sep_token=sep_token, eos_token=tokenizer.eos_token)
+                else:
+                    g_input_ids = (
+                        pretokenized["article"] + tokenizer.convert_tokens_to_ids([sep_token]) +
+                        pretokenized["summaries"][g] + [tokenizer.eos_token_id]
+                    )
+                item_inputs_ids.append(g_input_ids)
 
-            comparisons = {k: v.get("preferred") for k, v in item["comparisons"].items() if v.get("preferred") in {1, -1}}
+            item_inputs = do_pad(item_inputs_ids, pad_token_id=tokenizer.pad_token_id)
             outputs.append({"generators": generators, "inputs": item_inputs, "comparisons": comparisons})
 
         return outputs

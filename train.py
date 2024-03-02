@@ -63,10 +63,6 @@ def main():
     hparams = override_defaults(hparams, args_json)
     cfg = CrossEncoderConfig(**hparams)
 
-    n_gpu = torch.cuda.device_count()
-    if n_gpu > 0 and cfg.gpu_id < n_gpu:
-        torch.cuda.set_device(cfg.gpu_id)
-
     run_id = ''.join(random.choice(string.digits + string.ascii_uppercase) for _ in range(16))
     config_logging(level=cfg.log_level)
     do_setup_logging()

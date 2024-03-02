@@ -40,7 +40,8 @@ def get_collate_fn(
         for item in items:
             involved_summaries = {}
             for k, v in item["comparisons"].items():
-                if v["preferred"] == 1 or v["preferred"] == -1:
+                preferred = v.get("preferred")
+                if preferred == 1 or preferred == -1:
                     g1, g2 = eval(k)
                     if g1 not in involved_summaries:
                         involved_summaries[g1] = item["summaries"][g1]
@@ -56,7 +57,7 @@ def get_collate_fn(
                 item_input_ids.append(g_input_ids)
             item_inputs = do_pad(item_input_ids, pad_token_id=tokenizer.pad_token_id)
 
-            comparisons = {k: v["preferred"] for k, v in item["comparisons"].items() if v["preferred"] in {1, -1}}
+            comparisons = {k: v.get("preferred") for k, v in item["comparisons"].items() if v.get("preferred") in {1, -1}}
             outputs.append({"generators": generators, "inputs": item_inputs, "comparisons": comparisons})
 
         return outputs

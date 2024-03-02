@@ -1,3 +1,4 @@
+import json
 import torch
 from typing import Text, Dict, List, Any, Callable, Optional
 
@@ -47,8 +48,11 @@ def get_collate_fn(
                         involved_summaries[g1] = item["summaries"][g1]
                     if g2 not in involved_summaries:
                         involved_summaries[g2] = item["summaries"][g2]
-            article = item["article"]
 
+            if not involved_summaries:
+                continue
+
+            article = item["article"]
             generators = []
             item_input_ids = []
             for g, summary in involved_summaries.items():

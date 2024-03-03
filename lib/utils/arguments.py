@@ -48,6 +48,9 @@ def create_parser():
     parser.add_argument("--resume_from_checkpoint")
     parser.add_argument("--seed", type=int)
 
+    # data params
+    parser.add_argument("--max_input_len", type=int)
+
     # log params
     parser.add_argument("--wandb_api_key")
     parser.add_argument("--log_level")

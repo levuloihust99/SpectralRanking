@@ -35,6 +35,7 @@ def do_pad(batch_input_ids: List[List[int]], pad_token_id: int) -> Dict[Text, Li
 def get_collate_fn(
     tokenizer,
     sep_token,
+    max_input_len: Optional[int] = None
 ):
     def collate_fn(items: List[Dict[Text, Any]]):
         outputs = []
@@ -61,8 +62,11 @@ def get_collate_fn(
                 if pretokenized is None:
                     g_input_ids = encode_texts(tokenizer, item["article"], summary, sep_token=sep_token, eos_token=tokenizer.eos_token)
                 else:
+                    article_input_ids = pretokenized["article"]
+                    if max_input_len:
+                        article_input_ids = article_input_ids[:max_input_len]
                     g_input_ids = (
-                        pretokenized["article"] + tokenizer.convert_tokens_to_ids([sep_token]) +
+                        article_input_ids + tokenizer.convert_tokens_to_ids([sep_token]) +
                         pretokenized["summaries"][g] + [tokenizer.eos_token_id]
                     )
                 item_inputs_ids.append(g_input_ids)

@@ -95,23 +95,28 @@ def main():
     # dataloader
     train_dataset = ByteDataset(cfg.train_data_path, 6)
     sampler = DistributedSampler(train_dataset, num_replicas=1, rank=0, shuffle=True, seed=cfg.seed)
-    data_collate_fn = get_collate_fn(
+    train_data_collate_fn = get_collate_fn(
         tokenizer=tokenizer,
-        sep_token=cfg.sep_token
+        sep_token=cfg.sep_token,
+        max_input_len=cfg.max_input_len
     )
     train_dataloader = DataLoader(
         dataset=train_dataset,
         batch_size=cfg.per_device_train_batch_size,
         sampler=sampler,
-        collate_fn=data_collate_fn
+        collate_fn=train_data_collate_fn
     )
     if cfg.do_eval:
         eval_dataset = ByteDataset(cfg.eval_data_path, 6)
+        eval_data_collate_fn = get_collate_fn(
+            tokenizer=tokenizer,
+            sep_token=cfg.sep_token
+        )
         eval_dataloader = DataLoader(
             dataset=eval_dataset,
             batch_size=cfg.per_device_eval_batch_size,
             shuffle=False,
-            collate_fn=data_collate_fn
+            collate_fn=eval_data_collate_fn
         )
     else:
         eval_dataloader = None

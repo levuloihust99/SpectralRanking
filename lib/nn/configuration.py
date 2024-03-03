@@ -41,6 +41,9 @@ class CrossEncoderConfig:
         self.resume_from_checkpoint = None
         self.seed = 12345
 
+        # data config
+        self.max_input_len = 1500
+
         # log config
         self.log_level = "info"
         self.report_to = ["wandb"]
@@ -94,6 +97,8 @@ class CrossEncoderConfig:
             "greater_is_better": self.greater_is_better,
             "resume_from_checkpoint": self.resume_from_checkpoint,
             "seed": self.seed,
+            # data config,
+            "max_input_len": self.max_input_len,
             # log config
             "log_level": self.log_level,
             "report_to": self.report_to,

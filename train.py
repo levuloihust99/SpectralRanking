@@ -165,6 +165,10 @@ def main():
         # restore RNG />
 
     # trainer
+    training_info = {
+        "warmup_steps": num_warmup_steps,
+        "total_steps": total_steps
+    }
     trainer = CrossEncoderTrainer(
         config=cfg,
         device=device,
@@ -176,7 +180,8 @@ def main():
         scheduler=scheduler,
         training_state=training_state,
         rng_states=rng_states,
-        run_id=run_id
+        run_id=run_id,
+        training_info=training_info
     )
     trainer.train()
 

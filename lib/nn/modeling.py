@@ -16,7 +16,7 @@ class T5CrossEncoder(CrossEncoder, T5Stack):
         self.score = nn.Linear(config.hidden_size, 1, bias=False)
 
     @classmethod
-    def from_t5_for_conditional_generation(cls, encoder_decoder_model: T5Model):
+    def from_t5_for_conditional_generation(cls, encoder_decoder_model):
         encoder_stack_config = encoder_decoder_model.config
         encoder_stack_config.is_decoder = False
         encoder_stack_config.use_cache = False

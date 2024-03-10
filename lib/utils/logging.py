@@ -51,5 +51,7 @@ def add_color_formatter(logger: logging.Logger):
         handler.setFormatter(ColorFormatter())
 
 
-def do_setup_logging():
+def do_setup_logging(level=None):
+    if level is not None:
+        logging.basicConfig(level=level)
     add_color_formatter(logging.root)

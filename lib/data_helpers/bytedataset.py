@@ -23,7 +23,7 @@ class ByteDataset(Dataset):
     def __init__(
         self,
         data_path: Text,
-        idx_record_size: int,
+        idx_record_size: int = 6,
         transform=None
     ):
         self.data_path = data_path

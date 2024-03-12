@@ -60,6 +60,7 @@ class ByteDataset(Dataset):
             record = pickle.load(self.data_reader)
         except Exception as e:
             print("Idx: {} - Position: {}".format(idx, position))
+            raise
 
         # transform
         if self.transform:

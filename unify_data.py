@@ -214,7 +214,7 @@ def unify(dataset: ByteDataset, ignore_cyclic: bool = False, do_stats: bool = Fa
             unified_item = do_ignore_cyclic(unified_item, do_stats)
         if not unified_item.comparisons:
             continue
-        final_data.append(unified_item)
+        final_data.append(unified_item.model_dump())
 
     return final_data
 

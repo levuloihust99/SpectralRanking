@@ -31,6 +31,7 @@ def create_parser():
                         help="Whether to perform evaluation.")
     parser.add_argument("--score_scale", type=float)
     parser.add_argument("--loss_margin", type=float)
+    parser.add_argument("--loss_type", choices=["margin", "logsigmoid"])
     parser.add_argument("--learning_rate", type=float)
     parser.add_argument("--num_train_epochs", type=int)
     parser.add_argument("--warmup_ratio", type=float)

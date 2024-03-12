@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 from tqdm import tqdm
 
 from lib.nn.configuration import CrossEncoderConfig
-from lib.nn.losses import SpectralRankingLoss
+from lib.nn.losses import MarginRankingLoss, LogSigmoidRankingLoss
 from lib.utils.reporters import WandBReporter
 
 
@@ -40,7 +40,10 @@ class CrossEncoderTrainer:
         self.scheduler = scheduler
         self.training_state = training_state
         self.rng_states = rng_states
-        self.loss_calculator = SpectralRankingLoss(device=self.device, margin=config.loss_margin * config.score_scale)
+        if config.loss_type == "margin":
+            self.loss_calculator = MarginRankingLoss(device=self.device, margin=config.loss_margin * config.score_scale)
+        else:
+            self.loss_calculator = LogSigmoidRankingLoss(device=self.device)
         self.run_id = run_id
         self.training_info = training_info
 

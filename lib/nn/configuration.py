@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class CrossEncoderConfig:
         self.do_eval = True
         self.score_scale = 5.0
         self.loss_margin = 0.05
+        self.loss_type: Literal["margin", "logsigmoid"] = "logsigmoid"
         self.learning_rate = 2e-5
         self.num_train_epochs = 10
         self.warmup_ratio = 0.0
@@ -81,6 +83,7 @@ class CrossEncoderConfig:
             "do_eval": self.do_eval,
             "score_scale": self.score_scale,
             "loss_margin": self.loss_margin,
+            "loss_type": self.loss_type,
             "learning_rate": self.learning_rate,
             "num_train_epochs": self.num_train_epochs,
             "warmup_ratio": self.warmup_ratio,

@@ -21,6 +21,7 @@ from lib.utils.seeding import seed_everything
 from lib.utils.logging import do_setup_logging
 from lib.data_helpers.bytedataset import ByteDataset
 from lib.data_helpers.dataloader import get_collate_fn
+from lib.data_helpers.utils import pretokenize
 from lib.nn.modeling import T5CrossEncoder
 from lib.nn.configuration import CrossEncoderConfig
 from lib.nn.optimization import get_optimizer, get_schedule_linear
@@ -82,9 +83,9 @@ def main():
         device = torch.device("cuda:{}".format(cfg.gpu_id))
         logger.info('There are %d GPU(s) available.' % torch.cuda.device_count())
         logger.info('We will use the GPU:{}, {}'.format(torch.cuda.get_device_name(cfg.gpu_id), torch.cuda.get_device_capability(cfg.gpu_id)))
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-        logger.info("MPS backend is available, using MPS.")
+    # elif torch.backends.mps.is_available():
+    #     device = torch.device("mps")
+    #     logger.info("MPS backend is available, using MPS.")
     else:
         logger.info('No GPU available, using the CPU instead.')
         device = torch.device("cpu")
@@ -93,7 +94,9 @@ def main():
         model, learning_rate=cfg.learning_rate, adam_eps=cfg.adam_eps, weight_decay=cfg.weight_decay)
 
     # dataloader
-    train_dataset = ByteDataset(cfg.train_data_path, 6)
+    pretokenize(cfg.train_data_path, tokenizer)
+    train_data_path = os.path.join(cfg.train_data_path, "pretokenized")
+    train_dataset = ByteDataset(train_data_path, 6)
     sampler = DistributedSampler(train_dataset, num_replicas=1, rank=0, shuffle=True, seed=cfg.seed)
     train_data_collate_fn = get_collate_fn(
         tokenizer=tokenizer,
@@ -107,7 +110,9 @@ def main():
         collate_fn=train_data_collate_fn
     )
     if cfg.do_eval:
-        eval_dataset = ByteDataset(cfg.eval_data_path, 6)
+        pretokenize(cfg.eval_data_path, tokenizer)
+        eval_data_path = os.path.join(cfg.eval_data_path, "pretokenized")
+        eval_dataset = ByteDataset(eval_data_path, 6)
         eval_data_collate_fn = get_collate_fn(
             tokenizer=tokenizer,
             sep_token=cfg.sep_token

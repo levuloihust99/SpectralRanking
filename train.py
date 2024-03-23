@@ -34,23 +34,6 @@ def override_defaults(hparams, args):
     return hparams
 
 
-def config_logging(level: Text):
-    log_level = None
-    if level.lower() == "info":
-        log_level = logging.INFO
-    elif level.lower() == "debug":
-        log_level = logging.DEBUG
-    elif level.lower() == "warning":
-        log_level = logging.WARNING
-    elif level.lower() == "error":
-        log_level = logging.ERROR
-    elif level.lower() == "critical":
-        log_level = logging.CRITICAL
-    else:
-        log_level = logging.NOTSET
-    logging.basicConfig(level=log_level)
-
-
 def main():
     parser = create_parser()
     args = parser.parse_args()
@@ -65,8 +48,7 @@ def main():
     cfg = CrossEncoderConfig(**hparams)
 
     run_id = ''.join(random.choice(string.digits + string.ascii_uppercase) for _ in range(16))
-    config_logging(level=cfg.log_level)
-    do_setup_logging()
+    do_setup_logging(level=cfg.log_level)
     if cfg.seed:
         seed_everything(cfg.seed)
 

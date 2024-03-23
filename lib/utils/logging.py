@@ -53,5 +53,24 @@ def add_color_formatter(logger: logging.Logger):
 
 def do_setup_logging(level=None):
     if level is not None:
+        if isinstance(level, str):
+            level = get_log_level(level)
         logging.basicConfig(level=level)
     add_color_formatter(logging.root)
+
+
+def get_log_level(level: str):
+    log_level = None
+    if level.lower() == "info":
+        log_level = logging.INFO
+    elif level.lower() == "debug":
+        log_level = logging.DEBUG
+    elif level.lower() == "warning":
+        log_level = logging.WARNING
+    elif level.lower() == "error":
+        log_level = logging.ERROR
+    elif level.lower() == "critical":
+        log_level = logging.CRITICAL
+    else:
+        log_level = logging.NOTSET
+    return log_level

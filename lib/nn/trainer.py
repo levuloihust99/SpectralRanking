@@ -78,8 +78,8 @@ class CrossEncoderTrainer:
 
         progress_bar = tqdm(total=self.training_info["total_steps"], initial=global_step)
         for epoch in range(trained_epoch, self.config.num_train_epochs):
-            logger.info(' Epoch {:} / {:}'.format(epoch + 1, self.config.num_train_epochs))
-            self.train_dataloader.sampler.set_epoch(trained_epoch)
+            logger.info('Epoch {} / {}'.format(epoch + 1, self.config.num_train_epochs))
+            self.train_dataloader.t.set_epoch(trained_epoch)
             iterator = iter(self.train_dataloader)
             for i in range(data_step):
                 next(iterator)

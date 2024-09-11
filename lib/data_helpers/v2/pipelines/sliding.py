@@ -1,5 +1,4 @@
 import random
-import uuid
 from collections import deque
 from contextlib import contextmanager
 from pydantic import BaseModel
@@ -10,17 +9,19 @@ from ..id import get_unique_id
 from .idxs import IdxsGenerator
 
 
-class FetchState(BaseModel):
+class SlidingFetchState(BaseModel):
     epoch: int
     iteration: int
+    sliding_buf_size: int
 
 
 class SlidingPipelineState(BaseModel):
-    fetch_state: FetchState
+    fetch_state: SlidingFetchState
     consumed: int
+    buffer_index: int
 
 
-class SlidingWithPosPipeline:
+class SlidingPipeline:
     def __init__(self, dataset_path: str, buffer_size: int, bsz: int, seed: int):
         self.dataset_path = dataset_path
         self.dataset = ByteDataset(dataset_path)
@@ -29,6 +30,7 @@ class SlidingWithPosPipeline:
         self.bsz = bsz
         self.seed = seed
         self.buffer = deque()
+        self.buffer_index = -1
         self.shift = 0
         self.sliding_buffer = deque()
         self.idxs_generator = IdxsGenerator(num=len(self.dataset), seed=self.seed)
@@ -59,6 +61,7 @@ class SlidingWithPosPipeline:
         return {
             "epoch": self.idxs_generator.epoch,
             "iteration": self.idxs_generator.iteration,
+            "sliding_buf_size": len(self.sliding_buffer),
         }
 
     def fetch(self):
@@ -88,7 +91,10 @@ class SlidingWithPosPipeline:
                 }
             )
 
-        self.buffer.extend(items)
+        for item in items:
+            self.buffer_index = (self.buffer_index + 1) % self.buffer_size
+            item["state"].update(buffer_index=self.buffer_index)
+            self.buffer.append(item)
 
     def fill_buffer(self):
         """Fill buffer with items that are consumed by the data gateway."""
@@ -101,8 +107,7 @@ class SlidingWithPosPipeline:
         items = []
         for _ in range(self.buffer_size - self.shift):
             items.append(self.buffer.popleft())
-        for idx, item in enumerate(items):
-            item.update(buffer_index=idx + self.shift)
+        self.shift = 0
         return items
 
     def set_state(self, state: SlidingPipelineState):
@@ -111,13 +116,16 @@ class SlidingWithPosPipeline:
         self.idxs_generator.set_state(
             epoch=state.fetch_state.epoch, iteration=state.fetch_state.iteration
         )
+        for _ in range(state.fetch_state.sliding_buf_size):
+            self.idxs_generator.step_back()
         self.buffer.clear()
+        self.sliding_buffer.clear()
+        self.shift = state.buffer_index + 1
+        self.buffer_index = state.buffer_index
+        for _ in range(state.consumed):
+            self.buffer_index -= 1
+            if self.buffer_index < 0:
+                self.buffer_index += self.buffer_size
         self.fetch()
         for _ in range(state.consumed):
             self.buffer.popleft()
-
-    @contextmanager
-    def buffer_shift(self, shift: int):
-        self.shift = shift
-        yield
-        self.shift = 0

@@ -23,13 +23,17 @@ class NonconcisenessPipelineState(BaseModel):
 class NonconcisenessPipeline:
     def __init__(self, dataset_path: str, buffer_size: int, seed: int):
         self.dataset_path = dataset_path
-        self.dataset = ByteDataset(data_path=dataset_path)
+        self.dataset = None
         self.buffer_size = buffer_size
         self.seed = seed
         self.buffer = deque()
         self.buffer_index = -1
         self.shift = 0
-        self.idxs_generator = IdxsGenerator(num=len(self.dataset), seed=seed)
+        self.idxs_generator = self.get_idxs_generator()
+
+    def get_idxs_generator(self):
+        dataset = ByteDataset(data_path=self.dataset_path)
+        return IdxsGenerator(num=len(dataset), seed=self.seed)
 
     def __iter__(self):
         return self
@@ -42,6 +46,9 @@ class NonconcisenessPipeline:
 
     def fetch(self):
         """Fetch items from next sample. One sample from the dataset can map to multiple items."""
+
+        if not self.dataset:
+            self.dataset = ByteDataset(data_path=self.dataset_path)
 
         # save fetch state for reproduction
         fetch_state = self.get_fetch_state()
@@ -117,3 +124,7 @@ class NonconcisenessPipeline:
         self.fetch()
         for _ in range(state.consumed):
             self.buffer.popleft()
+
+    def close_dataset(self):
+        if self.dataset:
+            self.dataset = None

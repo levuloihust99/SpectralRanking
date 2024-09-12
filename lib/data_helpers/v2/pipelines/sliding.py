@@ -46,14 +46,23 @@ class SlidingPipeline:
         all_positives = []
         tracker = set()
         for comp in sample["comparisons"]:
-            if comp["metadata"]["type"] in {"Non-conciseness", "Non-coherence"}:
+            if comp["metadata"]["type"] in {
+                "Non-conciseness",
+                "Non-coverage",
+                "different-models",
+            }:
+                for item in comp["positives"] + comp["negatives"]:
+                    if item["content"] not in tracker:
+                        tracker.add(item["content"])
+                        all_positives.append(item)
+
+            if comp["metadata"]["type"] in {"Non-coherence"}:
                 for positive in comp["positives"]:
                     if positive["content"] not in tracker:
                         tracker.add(positive["content"])
                         all_positives.append(positive)
 
-        rnd.shuffle(all_positives)  # RNG hit
-        item = all_positives[0]
+        item = rnd.choice(all_positives)  # RNG hit
         item["unique_id"] = get_unique_id(rnd)  # RNG hit
         self.sliding_buffer.append(item)
 

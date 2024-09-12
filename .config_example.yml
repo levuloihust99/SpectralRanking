@@ -1,19 +1,62 @@
-main_data_path: data/v2/compare/byte
-negpool_data_path: data/v2/negpool/byte
-regulate_factors:
-  sliding: 1
-  nonconciseness: 1
-  noncoherence: 1
-  noncoverage: 1
-  model_compare: 1
-  negpool: 1
-buffer_size: 10
-contrastive_size: 10
-batch_size: 60
-pipelines:
-  sliding: {}
-  nonconciseness: {}
-  noncoherence: {}
-  noncoverage: {}
-  model_compare: {}
-  negpool: {}
+# data pipeline
+data_config:
+  main_data_path: data/v2/compare/byte
+  negpool_data_path: data/v2/negpool/byte
+  regulate_factors:
+    sliding: 1
+    nonconciseness: 1
+    noncoherence: 1
+    noncoverage: 1
+    model_compare: 1
+    negpool: 1
+  buffer_size: 10
+  contrastive_size: 10
+  batch_size: 60
+  pipelines:
+    sliding: {}
+    nonconciseness: {}
+    noncoherence: {}
+    noncoverage: {}
+    model_compare: {}
+    negpool: {}
+
+# tokenizer
+tokenizer_path: VietAI/vit5-base
+sep_token: <extra_id_0>
+
+# model
+model_type: t5
+model_path: VietAI/vit5-base
+
+# training
+output_dir: assets/outputs
+do_train: true
+do_eval: true
+score_scale: 1.0
+learning_rate: 2e-5
+num_train_steps: 20000
+warmup_ratio: 0.0
+warmup_steps: 0
+weight_decay: 0.0
+per_device_train_batch_size: 8
+per_device_eval_batch_size: 8
+adam_eps: 1e-8
+save_steps: 100
+eval_steps: 100
+save_total_limit: 2
+max_grad_norm: 1.0
+metric_for_best_model: eval/acc
+greater_is_better: true
+resume_from_checkpoint:
+seed: 12345
+
+# data
+max_input_len: 1500
+
+# log config
+log_level: info
+report_to:
+  - wandb
+wandb_api_key:
+logging_dir: assets/logs
+logging_steps: 10

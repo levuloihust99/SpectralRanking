@@ -1,5 +1,6 @@
 import logging
 
+
 RED = "\x1b[38;5;9m"
 BLUE = "\x1b[38;5;6m"
 YELLOW = "\x1b[38;5;3m"
@@ -27,9 +28,7 @@ class ColorFormatter(logging.Formatter):
         f"{GREEN}%(asctime)s - %(name)s [%(process)s]{RESET_CODE} "
         f"[{GRAY}%(levelname)s{RESET_CODE}] {GRAY}%(message)s{RESET_CODE}"
     )
-    DEFAULT_FORMATTER = (
-        f"{GREEN}%(asctime)s - %(name)s [%(process)s] [%(levelname)s] %(message)s{RESET_CODE}"
-    )
+    DEFAULT_FORMATTER = f"{GREEN}%(asctime)s - %(name)s [%(process)s] [%(levelname)s] %(message)s{RESET_CODE}"
 
     def format(self, record):
         if record.levelno == logging.INFO:
@@ -51,12 +50,17 @@ def add_color_formatter(logger: logging.Logger):
         handler.setFormatter(ColorFormatter())
 
 
-def do_setup_logging(level=None):
-    if level is not None:
-        if isinstance(level, str):
-            level = get_log_level(level)
-        logging.basicConfig(level=level)
-    add_color_formatter(logging.root)
+def do_setup_logging(
+    logger: logging.Logger = logging.root, level=logging.INFO, propagate: bool = False
+):
+    if isinstance(level, str):
+        level = get_log_level(level)
+    logger.setLevel(level)
+    handler = logging.StreamHandler()
+    handler.setLevel(level)
+    logger.addHandler(handler)
+    logger.propagate = propagate
+    add_color_formatter(logger)
 
 
 def get_log_level(level: str):

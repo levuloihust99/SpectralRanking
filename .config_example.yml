@@ -1,0 +1,19 @@
+main_data_path: data/v2/compare/byte
+negpool_data_path: data/v2/negpool/byte
+regulate_factors:
+  sliding: 1
+  nonconciseness: 1
+  noncoherence: 1
+  noncoverage: 1
+  model_compare: 1
+  negpool: 1
+buffer_size: 10
+contrastive_size: 10
+batch_size: 60
+pipelines:
+  sliding: {}
+  nonconciseness: {}
+  noncoherence: {}
+  noncoverage: {}
+  model_compare: {}
+  negpool: {}

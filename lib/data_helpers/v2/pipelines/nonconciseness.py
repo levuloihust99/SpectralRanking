@@ -6,6 +6,7 @@ from lib.data_helpers.bytedataset import ByteDataset
 
 from ..id import get_unique_id
 from .idxs import IdxsGenerator
+from ..schemas import PipelineType
 
 
 class NonconcisenessFetchState(BaseModel):
@@ -63,6 +64,7 @@ class NonconcisenessPipeline:
                     for negative in comp["negatives"]:
                         items.append(
                             {
+                                "input": sample["input"],
                                 "positive": {
                                     "content": positive["content"],
                                     "unique_id": positive["unique_id"],
@@ -82,6 +84,7 @@ class NonconcisenessPipeline:
         for item in items:
             self.buffer_index = (self.buffer_index + 1) % self.buffer_size
             item["state"].update(buffer_index=self.buffer_index)
+            item["type"] = PipelineType.NON_CONCISENESS
             self.buffer.append(item)
 
     def fill_buffer(self):

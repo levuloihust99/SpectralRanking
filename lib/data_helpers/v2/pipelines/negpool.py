@@ -6,6 +6,7 @@ from lib.data_helpers.bytedataset import ByteDataset
 
 from ..id import get_unique_id
 from .idxs import IdxsGenerator
+from ..schemas import PipelineType
 
 
 class IdxsGeneratorState(BaseModel):
@@ -24,13 +25,20 @@ class NegPoolPipelineState(BaseModel):
     buffer_index: int
 
 
+class NegPoolConfig(BaseModel):
+    pos_dataset_path: str
+    neg_dataset_path: str
+    buffer_size: int
+    contrastive_size: int
+
+
 class NegPoolPipeline:
     def __init__(
         self,
         pos_dataset_path: str,
         neg_dataset_path: str,
         buffer_size: int,
-        bsz: int,
+        contrastive_size: int,
         seed: int,
     ):
         self.pos_dataset_path = pos_dataset_path
@@ -41,7 +49,7 @@ class NegPoolPipeline:
         self.seed = seed
         self.buffer = deque()
         self.buffer_index = -1
-        self.bsz = bsz
+        self.contrastive_size = contrastive_size
         self.shift = 0
         rnd = random.Random(seed)
         pos_seed = rnd.getrandbits(128)
@@ -78,7 +86,7 @@ class NegPoolPipeline:
         pos_idx = next(self.pos_idxs_generator)
         pos_sample = self.pos_dataset[pos_idx]
         neg_samples = []
-        for _ in range(self.bsz):
+        for _ in range(self.contrastive_size):
             neg_samples.append(self.neg_dataset[next(self.neg_idxs_generator)])
         # depend on fetch state />
 
@@ -115,6 +123,7 @@ class NegPoolPipeline:
         for i, neg_sample in enumerate(neg_samples):
             items.append(
                 {
+                    "input": pos_sample["input"],
                     "positive": {
                         "content": pos_item["content"],
                         "unique_id": pos_item["unique_id"],  # RNG hit
@@ -130,6 +139,7 @@ class NegPoolPipeline:
         for item in items:
             self.buffer_index = (self.buffer_index + 1) % self.buffer_size
             item["state"].update(buffer_index=self.buffer_index)
+            item["type"] = PipelineType.NEGPOOL
             self.buffer.append(item)
 
     def fill_buffer(self):

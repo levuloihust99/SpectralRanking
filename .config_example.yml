@@ -1,4 +1,4 @@
-# data pipeline
+# train data pipeline
 data_config:
   main_data_path: data/v2/compare/byte
   negpool_data_path: data/v2/negpool/byte
@@ -19,6 +19,22 @@ data_config:
     noncoverage: {}
     model_compare: {}
     negpool: {}
+  seed: 12345
+
+# eval data pipeline
+eval_data_config:
+  main_data_path: data/v2/compare/byte
+  negpool_data_path: data/v2/negpool/byte
+  buffer_size: 10
+  batch_size: 60
+  seed: 12345
+  pipelines:
+    sliding:
+    nonconciseness:
+    noncoherence:
+    noncoverage:
+    model_compare:
+    negpool:
 
 # tokenizer
 tokenizer_path: VietAI/vit5-base

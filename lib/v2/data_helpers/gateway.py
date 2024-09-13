@@ -132,8 +132,10 @@ class DataGateway:
         logger.info("Feeding worker started")
 
         def signal_handler(signalnum, stackframe):
-            logger.info("Feeding worker shutdown")
-            sys.exit("Shutdown worker")
+            logger.info("Feeding worker shutdown (signal {})".format(signalnum))
+            for pipeline in self.pipelines.values():
+                pipeline.close_dataset()
+            sys.exit(0)
 
         signal.signal(signal.SIGTERM, signal_handler)
 
@@ -146,3 +148,8 @@ class DataGateway:
             items = next(pipeline)
             for item in items:
                 self.data_queue.put(item)
+
+    def __del__(self):
+        if self.worker_pid:
+            os.kill(self.worker_pid, signal.SIGTERM)
+        logger.info("Data gateway closed")

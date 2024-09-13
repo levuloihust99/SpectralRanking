@@ -1,7 +1,7 @@
 import copy
 from enum import Enum
 from typing import Any, Literal, Optional, Union, Annotated
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, PositiveInt
 
 
 class PipelineType(str, Enum):
@@ -18,35 +18,35 @@ class SlidingConfig(BaseModel):
 
     dataset_path: str
     buffer_size: int
-    contrastive_size: int
+    contrastive_size: PositiveInt
 
 
 class NonconcisenessConfig(BaseModel):
     type: Literal[PipelineType.NON_CONCISENESS] = PipelineType.NON_CONCISENESS
 
     dataset_path: str
-    buffer_size: int
+    buffer_size: PositiveInt
 
 
 class NoncoherenceConfig(BaseModel):
     type: Literal[PipelineType.NON_COHERENCE] = PipelineType.NON_COHERENCE
 
     dataset_path: str
-    buffer_size: int
+    buffer_size: PositiveInt
 
 
 class NoncoverageConfig(BaseModel):
     type: Literal[PipelineType.NON_COVERAGE] = PipelineType.NON_COVERAGE
 
     dataset_path: str
-    buffer_size: int
+    buffer_size: PositiveInt
 
 
 class ModelCompareConfig(BaseModel):
     type: Literal[PipelineType.MODEL_COMPARE] = PipelineType.MODEL_COMPARE
 
     dataset_path: str
-    buffer_size: int
+    buffer_size: PositiveInt
 
 
 class NegPoolConfig(BaseModel):
@@ -54,8 +54,8 @@ class NegPoolConfig(BaseModel):
 
     pos_dataset_path: str
     neg_dataset_path: str
-    buffer_size: int
-    contrastive_size: int
+    buffer_size: PositiveInt
+    contrastive_size: PositiveInt
 
 
 PipelineConfig = Annotated[
@@ -82,7 +82,7 @@ class DataGatewayConfig(BaseModel):
         default=None,
         description="Path to the negative bytedataset for NegPoolPipeline.",
     )
-    regulate_factors: dict[str, int] = Field(
+    regulate_factors: dict[str, PositiveInt] = Field(
         ...,
         description=(
             "Specify how many consecutive times that the gateway take from a specific pipeline."
@@ -96,22 +96,22 @@ class DataGatewayConfig(BaseModel):
             PipelineType.NEGPOOL: 1,
         },
     )
-    buffer_size: Optional[int] = Field(
+    buffer_size: Optional[PositiveInt] = Field(
         default=None,
         description=(
             "Common buffer size used for all pipelines. "
             "If a pipeline does not specify its buffer_size, this value will be used."
         ),
     )
-    contrastive_size: Optional[int] = Field(
+    contrastive_size: Optional[PositiveInt] = Field(
         default=None,
         description="Common contrastive size for SlidingPipeline and NegPoolPipeline.",
     )
-    prefetch_factor: int = Field(
+    prefetch_factor: PositiveInt = Field(
         ...,
         description="Maximum number of prefetched items, equal to the buffer size of DataGateway",
     )
-    batch_size: int = Field(..., description="Batch size used during training.")
+    batch_size: PositiveInt = Field(..., description="Batch size used during training.")
     seed: Optional[int] = Field(
         default=None, description="Seed value for setup random."
     )
@@ -152,4 +152,42 @@ class DataGatewayConfig(BaseModel):
                     pipeline_config["neg_dataset_path"] = data["negpool_data_path"]
                 if "buffer_size" not in pipeline_config:
                     pipeline_config["buffer_size"] = data["buffer_size"]
+        return data
+
+
+class EvalDataConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    main_data_path: str = Field(
+        ...,
+        description="Path to the eval bytedataset for all pipelines and positive pipeline of NegPoolPipeline.",
+    )
+    negpool_data_path: Optional[str] = Field(
+        default=None,
+        description="Path to the eval negative bytedataset for NegPoolPipeline.",
+    )
+    buffer_size: Optional[int] = Field(
+        default=None,
+        description=(
+            "Common buffer size used for all pipelines. "
+            "If a pipeline does not specify its buffer_size, this value will be used."
+        ),
+    )
+    batch_size: int = Field(..., description="Batch size used during evaluation.")
+    pipelines: dict[PipelineType, Optional[int]] = Field(
+        ..., description="Mapping from pipeline type to its buffer size."
+    )
+    seed: int = Field(..., description="Seed value for setup random.")
+    max_dataloader_len: PositiveInt = 5000
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_eval_config(cls, data: Any):
+        data = copy.deepcopy(data)
+        if "pipelines" not in data:
+            raise ValueError("Missing required field 'pipelines'")
+        pipelines_kv = list(data["pipelines"].items())
+        for pipeline_type, buffer_size in pipelines_kv:
+            if not buffer_size:
+                data["pipelines"][pipeline_type] = data["buffer_size"]
         return data

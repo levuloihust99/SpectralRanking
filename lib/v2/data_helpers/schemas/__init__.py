@@ -82,6 +82,14 @@ class DataGatewayConfig(BaseModel):
         default=None,
         description="Path to the negative bytedataset for NegPoolPipeline.",
     )
+    max_input_len: Optional[int] = Field(
+        default=None,
+        description="Maximum input length in tokens (max tokens for document).",
+    )
+    max_output_len: Optional[int] = Field(
+        default=None,
+        description="Maximum output length in tokens (max tokens for summaries).",
+    )
     regulate_factors: dict[str, PositiveInt] = Field(
         ...,
         description=(

@@ -1,6 +1,7 @@
 from typing import Literal, Optional
 from pydantic import BaseModel, model_validator
 
+from ..data_helpers.schemas import EvalDataConfig
 from ..data_helpers.gateway import DataGatewayConfig
 
 
@@ -15,6 +16,7 @@ class CrossEncoderConfig(BaseModel):
 
     # data pipeline
     data_config: DataGatewayConfig
+    eval_data_config: Optional[EvalDataConfig] = None
 
     # training
     output_dir: str = "assets/outputs"

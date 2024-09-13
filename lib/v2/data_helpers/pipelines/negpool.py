@@ -42,9 +42,9 @@ class NegPoolPipeline:
         seed: int,
     ):
         self.pos_dataset_path = pos_dataset_path
-        self.pos_dataset = None
+        self.pos_dataset = ByteDataset(data_path=self.pos_dataset_path)
         self.neg_dataset_path = neg_dataset_path
-        self.neg_dataset = None
+        self.neg_dataset = ByteDataset(data_path=self.neg_dataset_path)
         self.buffer_size = buffer_size
         self.seed = seed
         self.buffer = deque()
@@ -54,16 +54,8 @@ class NegPoolPipeline:
         rnd = random.Random(seed)
         self.pos_seed = rnd.getrandbits(128)
         self.neg_seed = rnd.getrandbits(128)
-        self.pos_idxs_generator = self.get_pos_idxs_generator()
-        self.neg_idxs_generator = self.get_neg_idxs_generator()
-
-    def get_pos_idxs_generator(self):
-        dataset = ByteDataset(data_path=self.pos_dataset_path)
-        return IdxsGenerator(num=len(dataset), seed=self.pos_seed)
-
-    def get_neg_idxs_generator(self):
-        dataset = ByteDataset(data_path=self.neg_dataset_path)
-        return IdxsGenerator(num=len(dataset), seed=self.neg_seed)
+        self.pos_idxs_generator = IdxsGenerator(num=len(self.pos_dataset), seed=self.pos_seed)
+        self.neg_idxs_generator = IdxsGenerator(num=len(self.neg_dataset), seed=self.neg_seed)
 
     def __iter__(self):
         return self
@@ -82,11 +74,6 @@ class NegPoolPipeline:
 
     def fetch(self):
         """Fetch items from next sample. One sample from the dataset can map to multiple items."""
-
-        if not self.pos_dataset:
-            self.pos_dataset = ByteDataset(data_path=self.pos_dataset_path)
-        if not self.neg_dataset:
-            self.neg_dataset = ByteDataset(data_path=self.neg_dataset_path)
 
         # save fetch state for reproduction
         fetch_state = self.get_fetch_state()

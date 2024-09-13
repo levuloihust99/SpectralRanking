@@ -12,6 +12,7 @@ data_config:
   buffer_size: 10
   contrastive_size: 10
   batch_size: 60
+  prefetch_factor: 1000
   pipelines:
     sliding: {}
     nonconciseness: {}

@@ -1,13 +1,19 @@
+from __future__ import annotations
+
 import os
 import sys
 import time
+import copy
 import queue
 import signal
 import random
 import logging
 import multiprocessing as mp
-from collections import deque
+from contextlib import contextmanager
+from collections import defaultdict, deque
 from typing import Optional, Union
+
+from transformers import AutoTokenizer
 
 from lib.utils.timing import timer
 
@@ -46,38 +52,31 @@ PIPELINE_STATE_MAP = {
 }
 
 PipelineUnion = Union[
-    SlidingPipeline,
-    NonconcisenessPipeline,
-    NoncoherencePipeline,
     NoncoveragePipeline,
     ModelComparePipeline,
     NegPoolPipeline,
 ]
 
 
-class DataGateway:
+class DataGatewayWorker:
+    """Used by DataGateway, suppose to run in child process."""
+
     def __init__(
         self,
         config: DataGatewayConfig,
-        tokenizer=None,
+        queue: mp.Queue,
+        stop_event,
+        state: Optional[dict] = None,
     ):
         self.config = config
-        self.data_queue = mp.Queue(maxsize=self.config.prefetch_factor)
-        self.feeding_worker = None
+        self.queue = queue
+        self.stop_event = stop_event
         self.current_pipeline_idx = -1
         self.pipeline_sequence = self.build_pipeline_sequence()
         self.pipelines = self.build_pipelines()
-        self.state = {
-            "pipelines_state": {},
-            "current_pipeline_idx": self.current_pipeline_idx,
-        }
-        self.tokenizer = tokenizer
-        self.worker_pid = None
-
-    def start_worker(self):
-        self.feeding_worker = mp.Process(target=self.feeding, daemon=True)
-        self.feeding_worker.start()
-        self.worker_pid = self.feeding_worker.pid
+        self.tokenizer = AutoTokenizer.from_pretrained(self.config.tokenizer_path)
+        if state:
+            self.set_state(state)
 
     def build_pipeline_sequence(self):
         sequence = []
@@ -95,31 +94,147 @@ class DataGateway:
             )
         return pipelines
 
-    def set_state(self, data_gateway_state: dict):
-        self.current_pipeline_idx = data_gateway_state["current_pipeline_idx"]
-        pipelines_state = data_gateway_state["pipelines_state"]
+    def set_state(self, state: dict):
+        self.current_pipeline_idx = state["current_pipeline_idx"]
+        pipelines_state = state["pipelines_state"]
         for pipeline_type, pipeline_state in pipelines_state.items():
             self.pipelines[pipeline_type].set_state(
                 PIPELINE_STATE_MAP[pipeline_type](**pipeline_state)
             )
-            self.pipelines[pipeline_type].close_dataset()
-        if self.worker_pid:
-            os.kill(self.worker_pid, signal.SIGTERM)
-            self.clear_queue()
-        self.start_worker()
 
-    @timer(task_name="Clear queue")
-    def clear_queue(self):
-        logger.info("Clear data queue...")
-        t0 = time.perf_counter()
-        MAX_WAIT = 10
-        while True:
-            try:
-                if time.perf_counter() - t0 > MAX_WAIT:
-                    raise Exception("Queue is not cleared within {}s".format(MAX_WAIT))
-                self.data_queue.get_nowait()
-            except queue.Empty as exc:
-                break
+    def collate_fn(self, items):
+        lookup = {}
+        for item, _ in items:
+            # < document
+            document_tokens = self.tokenizer.tokenize(item["input"])
+            if self.config.max_input_len:
+                document_tokens = document_tokens[: self.config.max_input_len]
+            # document />
+
+            # < positive
+            if item["positive"]["unique_id"] not in lookup:
+                summary_tokens = self.tokenizer.tokenize(item["positive"]["content"])
+                if self.config.max_output_len:
+                    summary_tokens = summary_tokens[: self.config.max_output_len]
+                concat_tokens = (
+                    document_tokens
+                    + [self.config.sep_token]
+                    + summary_tokens
+                    + [self.tokenizer.eos_token]
+                )
+                lookup[item["positive"]["unique_id"]] = {
+                    "input": item["input"],
+                    **item["positive"],
+                    "concat_tokens": self.tokenizer.convert_tokens_to_ids(
+                        concat_tokens
+                    ),
+                }
+            else:
+                assert (
+                    lookup[item["positive"]["unique_id"]]["content"]
+                    == item["positive"]["content"]
+                )
+            # positive />
+
+            # < negative
+            if item["negative"]["unique_id"] not in lookup:
+                summary_tokens = self.tokenizer.tokenize(item["negative"]["content"])
+                if self.config.max_output_len:
+                    summary_tokens = summary_tokens[: self.config.max_output_len]
+                concat_tokens = (
+                    document_tokens
+                    + [self.config.sep_token]
+                    + summary_tokens
+                    + [self.tokenizer.eos_token]
+                )
+                lookup[item["negative"]["unique_id"]] = {
+                    "input": item["input"],
+                    **item["negative"],
+                    "summary_tokens": summary_tokens,
+                }
+            else:
+                assert (
+                    lookup[item["negative"]["unique_id"]]["content"]
+                    == item["negative"]["content"]
+                )
+            # negative />
+
+        return {
+            "items": items,
+            "lookup": lookup,
+        }
+
+    def start(self):
+        logger.info("Feeding loop starts")
+
+        buffer = deque(maxlen=self.config.batch_size * 10)
+        try:
+            first_flag = True
+            while not self.stop_event.is_set():
+                saved_pipeline_idx = self.current_pipeline_idx
+                self.current_pipeline_idx = (self.current_pipeline_idx + 1) % len(
+                    self.pipeline_sequence
+                )
+                pipeline_name = self.pipeline_sequence[self.current_pipeline_idx]
+                pipeline = self.pipelines[pipeline_name]
+                items = next(pipeline)
+                if not items and not first_flag:
+                    items = next(pipeline)
+                first_flag = False
+                items_with_meta = []
+                for i, item in enumerate(items):
+                    items_with_meta.append((item, saved_pipeline_idx))
+                buffer.extend(items_with_meta)
+                if len(buffer) >= self.config.batch_size:
+                    batch = []
+                    for _ in range(self.config.batch_size):
+                        batch.append(buffer.popleft())
+                    transformed_batch = self.collate_fn(batch)
+                    self.queue.put(transformed_batch)
+
+        except Exception as e:
+            logger.error("Exception in feeding worker", exc_info=True)
+
+        finally:
+            logger.info("Feeding worker exiting")
+
+
+def worker_entrypoint(
+    config: DataGatewayConfig, queue: mp.Queue, stop_event, state: Optional[dict] = None
+):
+    worker = DataGatewayWorker(
+        config=config, queue=queue, stop_event=stop_event, state=state
+    )
+    worker.start()
+
+
+class DataGateway:
+    def __init__(self, config: DataGatewayConfig):
+        self.config = config
+        self.queue = None
+        self.stop_event = None
+        self.worker = None
+        self.state = {
+            "pipelines_state": {},
+            "current_pipeline_idx": -1,
+        }
+
+    def checkpoint_state(self):
+        return copy.deepcopy(self.state)
+
+    def start_worker(self):
+        self.queue = mp.Queue(maxsize=self.config.prefetch_factor)
+        self.stop_event = mp.Event()
+        self.worker = mp.Process(
+            target=worker_entrypoint,
+            args=(self.config, self.queue, self.stop_event, self.state),
+        )
+        self.worker.start()
+
+    def set_state(self, state: dict):
+        if self.worker is not None:
+            raise Exception("Cannot set state inside pipeline context")
+        self.state = state
 
     def __iter__(self):
         return self
@@ -130,106 +245,35 @@ class DataGateway:
 
     @timer(task_name="Produce batch")
     def __next__(self):
-        batch = self.data_queue.get()
-        for item, pipeline_idx in batch:
+        batch = self.queue.get()
+        pure_items = []
+        for item, pipeline_idx in batch["items"]:
+            pure_items.append(item)
             self.update_state(item["type"], item["state"], pipeline_idx)
-        return batch
+        return {"items": pure_items, "lookup": batch["lookup"]}
 
-    def collate_fn(self, items):
-        if not self.tokenizer:
-            return items
-
-        input_texts = []
-        for item, _ in items:
-            input_texts.append(item["input"])
-
-        tokenize_input_kwargs = {}
-        if self.config.max_input_len:
-            tokenize_input_kwargs["max_length"] = self.config.max_input_len
-            tokenize_input_kwargs["truncation"] = True
-
-        input_texts_token_ids = self.tokenizer(
-            input_texts,
-            padding=False,
-            return_attention_mask=False,
-            **tokenize_input_kwargs,
-        )
-
-        lookup = {}
-        tokenize_output_kwargs = {}
-        if self.config.max_output_len:
-            tokenize_output_kwargs["max_length"] = self.config.max_output_len
-            tokenize_output_kwargs["truncation"] = True
-
-        for item, _ in items:
-            if item["positive"]["unique_id"] not in lookup:
-                tokens_ids = self.tokenizer(
-                    item["positive"]["content"],
-                    padding=False,
-                    return_attention_mask=False,
-                    **tokenize_output_kwargs,
-                )
-                lookup[item["positive"]["unique_id"]] = {
-                    **item["positive"],
-                    "tokens_ids": tokens_ids,
-                }
-            else:
-                assert (
-                    lookup[item["positive"]["unique_id"]]["content"]
-                    == item["positive"]["content"]
-                )
-            if item["negative"]["unique_id"] not in lookup:
-                tokens_ids = self.tokenizer(
-                    item["negative"]["content"],
-                    padding=False,
-                    return_attention_mask=False,
-                    **tokenize_output_kwargs,
-                )
-                lookup[item["negative"]["unique_id"]] = {
-                    **item["negative"],
-                    "tokens_ids": tokens_ids,
-                }
-            else:
-                assert (
-                    lookup[item["negative"]["unique_id"]]["content"]
-                    == item["negative"]["content"]
-                )
-
-    def feeding(self):
-        logger.info("Feeding worker started")
-
-        def signal_handler(signalnum, stackframe):
-            logger.info("Feeding worker shutdown (signal {})".format(signalnum))
-            for pipeline in self.pipelines.values():
-                pipeline.close_dataset()
-            sys.exit(0)
-
-        signal.signal(signal.SIGTERM, signal_handler)
-
-        buffer = deque(maxlen=10000)
+    @timer(task_name="Clean up queue")
+    def cleanup_queue(self):
+        MAX_WAIT = 2
+        logger.info("Queue will be cleared within {}s".format(MAX_WAIT))
         while True:
-            saved_pipeline_idx = self.current_pipeline_idx
-            self.current_pipeline_idx = (self.current_pipeline_idx + 1) % len(
-                self.pipeline_sequence
-            )
-            pipeline_name = self.pipeline_sequence[self.current_pipeline_idx]
-            pipeline = self.pipelines[pipeline_name]
-            items = next(pipeline)
-            items_with_meta = []
-            for i, item in enumerate(items):
-                if i < len(items) - 1:
-                    items_with_meta.append((item, saved_pipeline_idx))
-                else:
-                    items_with_meta.append((item, self.current_pipeline_idx))
-            buffer.extend(items_with_meta)
-            if len(buffer) > self.config.batch_size:
-                batch = []
-                for _ in range(self.config.batch_size):
-                    batch.append(buffer.popleft())
-                transformed_batch = self.collate_fn(batch)
-                self.data_queue.put(transformed_batch)
+            try:
+                self.queue.get(timeout=MAX_WAIT)
+            except queue.Empty:
+                break
 
-    def __del__(self):
-        if self.worker_pid:
-            os.kill(self.worker_pid, signal.SIGTERM)
-        logger.info("Data gateway closed")
+    def shutdown(self):
+        logger.info("Shutting down DataGateway")
+        self.stop_event.set()
+        self.cleanup_queue()
+        if self.worker:
+            self.worker.join()
+        self.worker = None
+
+    @contextmanager
+    def pipeline_context(self):
+        try:
+            self.start_worker()
+            yield
+        finally:
+            self.shutdown()

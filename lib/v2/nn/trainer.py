@@ -13,29 +13,6 @@ from lib.v2.nn.ctx import distributed_context
 logger = logging.getLogger(__name__)
 
 
-def gather_contrastive(batch: list):
-    lookup = {}
-    contrastive_samples = defaultdict(set)
-    for item in batch:
-        if item["positive"]["unique_id"] not in lookup:
-            lookup[item["positive"]["unique_id"]] = item["positive"]
-        else:
-            assert (
-                lookup[item["positive"]["unique_id"]]["content"]
-                == item["positive"]["content"]
-            )
-        if item["negative"]["unique_id"] not in lookup:
-            lookup[item["negative"]["unique_id"]] = item["negative"]
-        else:
-            lookup[item["negative"]["unique_id"]]["content"] == item["negative"][
-                "content"
-            ]
-        contrastive_samples[item["positive"]["unique_id"]].add(
-            item["negative"]["unique_id"]
-        )
-    return lookup, contrastive_samples
-
-
 class CrossEncoderTrainer:
     def __init__(
         self,
@@ -79,7 +56,6 @@ class CrossEncoderTrainer:
                 project_name="SpectralRankingV2", config=self.config.model_dump()
             )
 
-        global_step = 0
         trained_steps = 0
         for step in range(trained_steps, self.config.num_train_steps):
             batch = self.fetch_batch()
@@ -93,4 +69,4 @@ class CrossEncoderTrainer:
                     reporter.log({"train/loss": 0.0}, step=trained_steps)
 
     def train_step(self, batch):
-        lookup, contrastive_samples = gather_contrastive(batch)
+        pass

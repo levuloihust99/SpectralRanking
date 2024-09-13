@@ -27,7 +27,7 @@ class SlidingPipeline:
         self, dataset_path: str, buffer_size: int, contrastive_size: int, seed: int
     ):
         self.dataset_path = dataset_path
-        self.dataset = None
+        self.dataset = ByteDataset(data_path=self.dataset_path)
         self.buffer_size = buffer_size
         self.prev_fetch_state = None
         self.contrastive_size = contrastive_size
@@ -36,11 +36,7 @@ class SlidingPipeline:
         self.buffer_index = -1
         self.shift = 0
         self.sliding_buffer = deque()
-        self.idxs_generator = self.get_idxs_generator()
-
-    def get_idxs_generator(self):
-        dataset = ByteDataset(data_path=self.dataset_path)
-        return IdxsGenerator(num=len(dataset), seed=self.seed)
+        self.idxs_generator = IdxsGenerator(num=len(self.dataset), seed=self.seed)
 
     def fetch_positive(self):
         rnd = random.Random(
@@ -83,8 +79,6 @@ class SlidingPipeline:
 
     def fetch(self):
         """Return next items to be appended to the buffer."""
-        if not self.dataset:
-            self.dataset = ByteDataset(data_path=self.dataset_path)
 
         # save fetch state for reproduction
         fetch_state = self.get_fetch_state()

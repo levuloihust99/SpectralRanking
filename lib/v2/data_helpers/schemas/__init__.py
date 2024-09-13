@@ -126,6 +126,10 @@ class DataGatewayConfig(BaseModel):
     pipelines: dict[PipelineType, PipelineConfig] = Field(
         ..., description="Dictionary mapping each pipeline type to its config."
     )
+    sep_token: str = Field(
+        ..., description="Separate token used for cross encoder encoding."
+    )
+    tokenizer_path: str = Field(..., description="Path to the pretrained tokenizer.")
 
     @model_validator(mode="before")
     @classmethod

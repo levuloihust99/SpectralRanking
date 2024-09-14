@@ -7,16 +7,17 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def timer(_func=None, *, task_name: Optional[str] = None):
+def timer(_func=None, *, task_name: Optional[str] = None, log_level=logging.INFO):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             t0 = time.perf_counter()
             ret = func(*args, **kwargs)
-            logger.info(
+            logger.log(
+                log_level,
                 "{} done in {}s".format(
                     task_name or func.__qualname__, time.perf_counter() - t0
-                )
+                ),
             )
             return ret
 

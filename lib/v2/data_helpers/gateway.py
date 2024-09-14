@@ -245,7 +245,7 @@ class DataGateway:
         self.state["pipelines_state"][pipeline_type] = state
         self.state["current_pipeline_idx"] = pipeline_idx
 
-    @timer(task_name="Produce batch")
+    @timer(task_name="Produce batch", log_level=logging.DEBUG)
     def __next__(self):
         batch = self.queue.get()
         pure_items = []

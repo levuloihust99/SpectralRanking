@@ -198,7 +198,7 @@ class CrossEncoderTrainer:
             all_local_score_maps = all_gather_list(local_score_map)
             global_score_map = {}
             for score_map in all_local_score_maps:
-                for k, v in score_map:
+                for k, v in score_map.items():
                     if k in local_score_map:
                         global_score_map[k] = local_score_map[k]
                     else:

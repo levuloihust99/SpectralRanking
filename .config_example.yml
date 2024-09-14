@@ -29,7 +29,7 @@ eval_data_config:
   main_data_path: data/v2/compare/byte/eval
   negpool_data_path: data/v2/negpool/byte/eval
   buffer_size: 10
-  batch_size: 1000
+  batch_size: 16
   max_dataloader_len: 5000
   pipelines:
     sliding:

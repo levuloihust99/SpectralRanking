@@ -44,6 +44,25 @@ def get_model_obj(model: torch.nn.Module):
     return model.module if hasattr(model, "module") else model
 
 
+def save_rng_state():
+    cpu_state = torch.get_rng_state()
+    if distributed_context["device"].type == "cuda":
+        cuda_state = torch.cuda.get_rng_state()
+    else:
+        cuda_state = None
+    if distributed_context["world_size"] > 1:
+        cuda_states = all_gather_list(cuda_state)
+    else:
+        cuda_states = [cuda_state]
+    rng_state = {
+        "cpu_state": cpu_state,
+        "cuda_states": cuda_states,
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+    }
+    return rng_state
+
+
 class CrossEncoderTrainer:
     def __init__(
         self,
@@ -178,11 +197,12 @@ class CrossEncoderTrainer:
                 if self.config.do_eval and trained_steps % self.config.eval_steps == 0:
                     self.evaluate()
                 if trained_steps % self.config.save_steps == 0:
+                    rng_state = save_rng_state()
                     if (
                         distributed_context["local_rank"] == -1
                         or distributed_context["local_rank"] == 0
                     ):
-                        self.save_checkpoint()
+                        self.save_checkpoint(rng_state)
 
     def train_step(self, batch):
         logger.debug("Local input tensor size: {}".format(batch["input_ids"].size()))
@@ -202,7 +222,9 @@ class CrossEncoderTrainer:
                     if k in local_score_map:
                         global_score_map[k] = local_score_map[k]
                     else:
-                        global_score_map[k] = v.to(distributed_context["device"])
+                        global_score_map[k] = v.detach().to(
+                            distributed_context["device"]
+                        )
         else:
             global_score_map = local_score_map
 
@@ -234,27 +256,9 @@ class CrossEncoderTrainer:
     def evaluate(self):
         pass
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, rng_state):
         logger.info("Saving checkpoint...")
         checkpoint_dir = os.path.join(self.config.output_dir, self.run_id)
-
-        # < save RNG state
-        cpu_state = torch.get_rng_state()
-        if distributed_context["device"].type == "cuda":
-            cuda_state = torch.cuda.get_rng_state()
-        else:
-            cuda_state = None
-        if distributed_context["world_size"] > 1:
-            cuda_states = all_gather_list(cuda_state)
-        else:
-            cuda_states = [cuda_state]
-        rng_state = {
-            "cpu_state": cpu_state,
-            "cuda_states": cuda_states,
-            "python": random.getstate(),
-            "numpy": np.random.get_state(),
-        }
-        # save RNG state />
 
         model_to_save = get_model_obj(self.model)
         cp_name = "checkpoint-{:06d}".format(self.trainer_state["trained_steps"])

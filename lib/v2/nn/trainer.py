@@ -1,6 +1,12 @@
+import os
+import time
 import copy
+import json
 import torch
+import shutil
+import random
 import logging
+import numpy as np
 from collections import defaultdict
 from typing import Optional, Union
 
@@ -34,6 +40,10 @@ def equal_chunking(items: list, n_chunks: int):
     return chunks
 
 
+def get_model_obj(model: torch.nn.Module):
+    return model.module if hasattr(model, "module") else model
+
+
 class CrossEncoderTrainer:
     def __init__(
         self,
@@ -44,6 +54,7 @@ class CrossEncoderTrainer:
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler.LRScheduler,
         run_id: str,
+        trainer_state: Optional[dict] = None,
     ):
         self.model = model
         self.config = config
@@ -61,7 +72,10 @@ class CrossEncoderTrainer:
                 self.reporters.append(
                     WandBReporter(api_key=self.config.wandb_api_key, run_id=self.run_id)
                 )
-        self.trainer_state = {}
+        self.trainer_state = trainer_state or {}
+        if "data_state" in self.trainer_state:
+            logger.info("Restoring data gateway state")
+            self.train_dataloader.set_state(self.trainer_state["data_state"])
 
     def checkpoint_state(self):
         return copy.deepcopy(self.trainer_state)
@@ -132,11 +146,15 @@ class CrossEncoderTrainer:
         logger.info("*************** Start training ***************")
         for reporter in self.reporters:
             reporter.init_run(
-                project_name="SpectralRankingV2", config=self.config.model_dump()
+                project_name=self.config.wandb_project, config=self.config.model_dump()
             )
 
-        trained_steps = 0
+        trained_steps = self.trainer_state.get("trained_steps", 0)
+        if trained_steps > 0:
+            logger.info("Model was trained for {} steps".format(trained_steps))
+
         with self.train_dataloader.pipeline_context():
+            t0 = time.perf_counter()
             for step in range(trained_steps, self.config.num_train_steps):
                 batch = self.fetch_batch()
                 loss = self.train_step(batch)  # scalar loss value
@@ -144,9 +162,27 @@ class CrossEncoderTrainer:
                 # state update and log at the end of the iteration
                 trained_steps = step + 1
                 self.trainer_state["trained_steps"] = trained_steps
-                if self.config.logging_steps % trained_steps == 0:
+                if trained_steps % self.config.logging_steps == 0:
+                    logger.info(
+                        "Step {}/{}: Loss = {} - Elapsed time: {}s".format(
+                            trained_steps,
+                            self.config.num_train_steps,
+                            loss,
+                            time.perf_counter() - t0,
+                        )
+                    )
+                    t0 = time.perf_counter()
                     for reporter in self.reporters:
                         reporter.log({"train/loss": 0.0}, step=trained_steps)
+
+                if self.config.do_eval and trained_steps % self.config.eval_steps == 0:
+                    self.evaluate()
+                if trained_steps % self.config.save_steps == 0:
+                    if (
+                        distributed_context["local_rank"] == -1
+                        or distributed_context["local_rank"] == 0
+                    ):
+                        self.save_checkpoint()
 
     def train_step(self, batch):
         self.optimizer.zero_grad()
@@ -193,3 +229,77 @@ class CrossEncoderTrainer:
         self.scheduler.step()
 
         return scalar_step_loss
+
+    def evaluate(self):
+        pass
+
+    def save_checkpoint(self):
+        logger.info("Saving checkpoint...")
+        checkpoint_dir = os.path.join(self.config.output_dir, self.run_id)
+
+        # < save RNG state
+        cpu_state = torch.get_rng_state()
+        if distributed_context["device"].type == "cuda":
+            cuda_state = torch.cuda.get_rng_state()
+        else:
+            cuda_state = None
+        if distributed_context["world_size"] > 1:
+            cuda_states = all_gather_list(cuda_state)
+        else:
+            cuda_states = [cuda_state]
+        rng_state = {
+            "cpu_state": cpu_state,
+            "cuda_states": cuda_states,
+            "python": random.getstate(),
+            "numpy": np.random.get_state(),
+        }
+        # save RNG state />
+
+        model_to_save = get_model_obj(self.model)
+        cp_name = "checkpoint-{:06d}".format(self.trainer_state["trained_steps"])
+        cp_path = os.path.join(checkpoint_dir, cp_name)
+
+        all_cp_paths = os.listdir(checkpoint_dir)
+        all_cp_paths = [f for f in all_cp_paths if f.startswith("checkpoint-")]
+        all_cp_paths = [os.path.join(checkpoint_dir, f) for f in all_cp_paths]
+        all_cp_paths = sorted(
+            all_cp_paths, key=lambda x: os.stat(x).st_mtime, reverse=True
+        )
+        best_cp_path = []
+        other_cp_paths = []
+        for cp in all_cp_paths:
+            if "best_checkpoint" in self.trainer_state and cp == os.path.join(
+                checkpoint_dir, self.trainer_state["best_checkpoint"]
+            ):
+                best_cp_path.append(cp)
+            else:
+                other_cp_paths.append(cp)
+        if len(best_cp_path) == 1 and best_cp_path[0] == cp_path:
+            head = [cp_path]
+        else:
+            head = best_cp_path + [cp_path]
+        all_cp_paths = head + other_cp_paths
+
+        if self.config.save_total_limit > 0:
+            paths_to_delete = all_cp_paths[self.config.save_total_limit :]
+            for path in paths_to_delete:
+                logger.info("Deleting {}".format(path))
+                shutil.rmtree(path)
+
+        if not os.path.exists(cp_path):
+            os.makedirs(cp_path)
+
+        with open(os.path.join(cp_path, "model.pth"), "wb") as writer:
+            torch.save(model_to_save.state_dict(), writer)
+        with open(os.path.join(cp_path, "optimizer.pt"), "wb") as writer:
+            torch.save(self.optimizer.state_dict(), writer)
+        with open(os.path.join(cp_path, "scheduler.pt"), "wb") as writer:
+            torch.save(self.scheduler.state_dict(), writer)
+        with open(
+            os.path.join(cp_path, "trainer_state.json"), "w", encoding="utf-8"
+        ) as writer:
+            json.dump(self.trainer_state, writer, indent=4, ensure_ascii=False)
+        with open(os.path.join(cp_path, "rng_state.pth"), "wb") as writer:
+            torch.save(rng_state, writer)
+
+        logger.info("Checkpoint saved to {}".format(cp_path))

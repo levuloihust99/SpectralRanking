@@ -47,6 +47,7 @@ class CrossEncoderConfig(BaseModel):
     log_level: Literal["info", "warning", "debug", "error"] = "info"
     report_to: list[str] = ["wandb"]
     wandb_api_key: Optional[str] = None
+    wandb_project: Optional[str] = "SpectralRankingV2"
     logging_dir: str = "assets/logs"
     logging_steps: int = 10
 
@@ -58,6 +59,6 @@ class CrossEncoderConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_config(self):
-        if self.save_steps % self.eval_steps != 0:
+        if self.do_eval and self.save_steps % self.eval_steps != 0:
             raise ValueError("`save_steps` must be multiple of `eval_steps`")
         return self

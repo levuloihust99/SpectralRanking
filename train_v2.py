@@ -11,7 +11,7 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from transformers import AutoTokenizer, T5ForConditionalGeneration
+from transformers import T5ForConditionalGeneration
 
 from lib.nn.modeling import T5CrossEncoder
 from lib.nn.optimization import get_optimizer, get_schedule_linear
@@ -22,7 +22,7 @@ from lib.v2.nn.ctx import distributed_context
 from lib.v2.nn.configuration import CrossEncoderConfig
 from lib.v2.data_helpers.gateway import DataGateway
 from lib.v2.data_helpers.eval_dataloader import EvalDataLoader
-from lib.v2.nn.trainer import CrossEncoderTrainer
+from lib.v2.nn.trainer import CrossEncoderTrainer, get_model_obj
 
 logger = logging.getLogger(__name__)
 
@@ -125,8 +125,41 @@ def main():
     # SCHEDULER />
 
     # < LOAD CHECKPOINT
+    rng_state = None
+    trainer_state = None
     if config.resume_from_checkpoint:
-        pass
+        cp_path = config.resume_from_checkpoint
+        logger.info("Loading checkpoint from {}".format(cp_path))
+
+        run_id = os.path.basename(os.path.dirname(cp_path))
+        with open(os.path.join(cp_path, "trainer_state.json"), "r") as reader:
+            trainer_state = json.load(reader)
+
+        rng_state = torch.load(os.path.join(cp_path, "rng_state.pth"))
+        # restore RNG
+        cpu_state = rng_state.get("cpu_state")
+        if cpu_state is not None:
+            torch.set_rng_state(cpu_state)
+        cuda_states = rng_state.get("cuda_states")
+        if cuda_states is not None:
+            if torch.cuda.is_available() > 0:
+                local_rank = distributed_context["local_rank"]
+                if local_rank < len(cuda_states):
+                    try:
+                        torch.cuda.set_rng_state(cuda_states[local_rank])
+                    except Exception:
+                        logger.error(
+                            "Invalid RNG state restored from checkpoint file '{}'".format(
+                                cp_path
+                            )
+                        )
+
+        model_state = torch.load(os.path.join(cp_path, "model.pth"))
+        get_model_obj(model).load_state_dict(model_state)
+        optimizer_state = torch.load(os.path.join(cp_path, "optimizer.pt"))
+        optimizer.load_state_dict(optimizer_state)
+        scheduler_state = torch.load(os.path.join(cp_path, "scheduler.pt"))
+        scheduler.load_state_dict(scheduler_state)
     # LOAD CHECKPOINT />
 
     # < TRAINER
@@ -138,6 +171,7 @@ def main():
         optimizer=optimizer,
         scheduler=scheduler,
         run_id=run_id,
+        trainer_state=trainer_state,
     )
     trainer.train()
     # TRAINER />

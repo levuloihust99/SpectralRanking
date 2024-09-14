@@ -169,7 +169,7 @@ class DataGatewayWorker:
     def start(self):
         logger.info("Feeding loop starts")
 
-        buffer = deque(maxlen=self.config.batch_size * 10)
+        buffer = deque(maxlen=10000)
         try:
             first_flag = True
             while not self.stop_event.is_set():
@@ -187,7 +187,7 @@ class DataGatewayWorker:
                 for i, item in enumerate(items):
                     items_with_meta.append((item, saved_pipeline_idx))
                 buffer.extend(items_with_meta)
-                if len(buffer) >= self.config.batch_size:
+                while len(buffer) >= self.config.batch_size:
                     batch = []
                     for _ in range(self.config.batch_size):
                         batch.append(buffer.popleft())

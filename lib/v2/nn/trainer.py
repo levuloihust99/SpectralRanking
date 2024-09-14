@@ -202,7 +202,7 @@ class CrossEncoderTrainer:
                     if k in local_score_map:
                         global_score_map[k] = local_score_map[k]
                     else:
-                        global_score_map[k] = v
+                        global_score_map[k] = v.to(distributed_context["device"])
         else:
             global_score_map = local_score_map
 

@@ -54,10 +54,16 @@ def all_gather_list(data, group=None, max_size=16384):
     world_size = get_world_size()
     buffer_size = max_size * world_size
 
-    if not hasattr(all_gather_list, '_buffer') or \
-            all_gather_list._buffer.numel() < buffer_size:
-        all_gather_list._buffer = torch.cuda.ByteTensor(buffer_size)
-        all_gather_list._cpu_buffer = torch.ByteTensor(max_size).pin_memory()
+    if (
+        not hasattr(all_gather_list, "_buffer")
+        or all_gather_list._buffer.numel() < buffer_size
+    ):
+        all_gather_list._buffer = torch.zeros(
+            buffer_size, dtype=torch.uint8, device="cuda:{}".format(dist.get_rank())
+        )
+        all_gather_list._cpu_buffer = torch.zeros(
+            max_size, dtype=torch.uint8
+        ).pin_memory()
 
     buffer = all_gather_list._buffer
     buffer.zero_()

@@ -47,7 +47,7 @@ def get_model_obj(model: torch.nn.Module):
 def save_rng_state():
     cpu_state = torch.get_rng_state()
     if distributed_context["device"].type == "cuda":
-        cuda_state = torch.cuda.get_rng_state()
+        cuda_state = torch.cuda.get_rng_state(distributed_context["local_rank"])
     else:
         cuda_state = None
     if distributed_context["world_size"] > 1:

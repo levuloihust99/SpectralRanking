@@ -10,5 +10,5 @@ def seed_everything(seed: int):
     np.random.seed(seed)
 
     default_generator.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True

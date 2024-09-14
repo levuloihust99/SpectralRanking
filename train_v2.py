@@ -146,7 +146,10 @@ def main():
                 local_rank = distributed_context["local_rank"]
                 if local_rank < len(cuda_states):
                     try:
-                        torch.cuda.set_rng_state(cuda_states[local_rank])
+                        torch.cuda.set_rng_state(
+                            cuda_states[local_rank],
+                            device=local_rank,
+                        )
                     except Exception:
                         logger.error(
                             "Invalid RNG state restored from checkpoint file '{}'".format(

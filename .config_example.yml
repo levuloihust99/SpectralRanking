@@ -44,7 +44,7 @@ type_model: t5
 path_to_model: VietAI/vit5-base
 
 # training
-output_dir: assets/outputs
+output_dir: assets/outputs/spectral-ranking-v2
 do_train: true
 do_eval: true
 score_scale: 1.0
@@ -74,5 +74,5 @@ report_to:
   - wandb
 wandb_api_key:
 wandb_project:
-logging_dir: assets/logs
+logging_dir: assets/logs/spectral-ranking-v2
 logging_steps: 10

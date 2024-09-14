@@ -189,7 +189,6 @@ class EvalDataConfig(BaseModel):
     pipelines: dict[PipelineType, Optional[int]] = Field(
         ..., description="Mapping from pipeline type to its buffer size."
     )
-    seed: int = Field(..., description="Seed value for setup random.")
     max_dataloader_len: PositiveInt = 5000
 
     @model_validator(mode="before")

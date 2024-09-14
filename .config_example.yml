@@ -1,7 +1,7 @@
-# train data pipeline
+# data pipeline
 data_config:
-  main_data_path: data/v2/compare/byte
-  negpool_data_path: data/v2/negpool/byte
+  main_data_path: data/v2/compare/byte/train
+  negpool_data_path: data/v2/negpool/byte/train
   regulate_factors:
     sliding: 1
     nonconciseness: 1
@@ -12,7 +12,10 @@ data_config:
   buffer_size: 10
   contrastive_size: 10
   batch_size: 60
-  prefetch_factor: 1000
+  prefetch_factor: 100
+  sep_token: <extra_id_0>
+  tokenizer_path: VietAI/vit5-base
+  max_input_len: 1500
   pipelines:
     sliding: {}
     nonconciseness: {}
@@ -20,15 +23,14 @@ data_config:
     noncoverage: {}
     model_compare: {}
     negpool: {}
-  seed: 12345
 
 # eval data pipeline
 eval_data_config:
-  main_data_path: data/v2/compare/byte
-  negpool_data_path: data/v2/negpool/byte
+  main_data_path: data/v2/compare/byte/eval
+  negpool_data_path: data/v2/negpool/byte/eval
   buffer_size: 10
-  batch_size: 60
-  seed: 12345
+  batch_size: 1000
+  max_dataloader_len: 5000
   pipelines:
     sliding:
     nonconciseness:
@@ -37,13 +39,9 @@ eval_data_config:
     model_compare:
     negpool:
 
-# tokenizer
-tokenizer_path: VietAI/vit5-base
-sep_token: <extra_id_0>
-
 # model
-model_type: t5
-model_path: VietAI/vit5-base
+type_model: t5
+path_to_model: VietAI/vit5-base
 
 # training
 output_dir: assets/outputs
@@ -58,9 +56,9 @@ weight_decay: 0.0
 per_device_train_batch_size: 8
 per_device_eval_batch_size: 8
 adam_eps: 1e-8
-save_steps: 100
-eval_steps: 100
-save_total_limit: 2
+save_steps: 500
+eval_steps: 500
+save_total_limit: 5
 max_grad_norm: 1.0
 metric_for_best_model: eval/acc
 greater_is_better: true
@@ -75,5 +73,6 @@ log_level: info
 report_to:
   - wandb
 wandb_api_key:
+wandb_project:
 logging_dir: assets/logs
 logging_steps: 10

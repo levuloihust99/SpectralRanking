@@ -5,3 +5,4 @@ wandb >= 0.16.3, < 1
 sanic >= 23.12.1, < 24
 Sanic-Cors >= 2.2.0, < 3
 pydantic >= 2.9.1, < 3
+git+https://github.com/levuloihust99/GGDrive-CLI.git

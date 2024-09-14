@@ -185,6 +185,7 @@ class CrossEncoderTrainer:
                         self.save_checkpoint()
 
     def train_step(self, batch):
+        logger.debug("Local input tensor size: {}".format(batch["input_ids"].size()))
         self.optimizer.zero_grad()
         scores = self.model(
             input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]

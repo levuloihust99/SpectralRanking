@@ -48,6 +48,7 @@ class CrossEncoderConfig(BaseModel):
     wandb_project: Optional[str] = "SpectralRankingV2"
     logging_dir: str = "assets/logs"
     logging_steps: int = 10
+    ggdrive_storage_folder_id: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod

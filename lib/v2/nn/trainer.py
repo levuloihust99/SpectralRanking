@@ -31,7 +31,7 @@ def equal_chunking(items: list, n_chunks: int):
     init_chunk_size = L // n_chunks
     remainder = L - init_chunk_size * n_chunks
     added = [1] * remainder + [0] * (n_chunks - remainder)
-    chunk_sizes = [init_chunk_size + added[i] for i in range(L)]
+    chunk_sizes = [init_chunk_size + added[i] for i in range(n_chunks)]
     idx = 0
     chunks = []
     for chunk_size in chunk_sizes:

@@ -40,7 +40,8 @@ class EvalDataLoader:
                     }
                     all_unique_ids = set()
                     for item in last_batch["items"]:
-                        all_unique_ids.add(item["unique_id"])
+                        all_unique_ids.add(item["positive"]["unique_id"])
+                        all_unique_ids.add(item["negative"]["unique_id"])
                     all_lookup_ids = set(last_batch["lookup"].keys())
                     for unique_id in all_lookup_ids:
                         if unique_id not in all_unique_ids:

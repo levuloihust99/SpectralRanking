@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 from pydantic import BaseModel, model_validator
 
 from ..data_helpers.schemas import EvalDataConfig
@@ -11,8 +11,8 @@ class CrossEncoderConfig(BaseModel):
     sep_token: str = "<extra_id_0>"
 
     # model
-    model_type: str = "t5"
-    model_path: Optional[str] = None
+    type_model: str = "t5"
+    path_to_model: Optional[str] = None
 
     # data pipeline
     data_config: DataGatewayConfig
@@ -49,6 +49,12 @@ class CrossEncoderConfig(BaseModel):
     wandb_api_key: Optional[str] = None
     logging_dir: str = "assets/logs"
     logging_steps: int = 10
+
+    @model_validator(mode="before")
+    @classmethod
+    def inject_seed_to_data_config(cls, data: Any):
+        data["data_config"]["seed"] = data["seed"]
+        return data
 
     @model_validator(mode="after")
     def validate_config(self):

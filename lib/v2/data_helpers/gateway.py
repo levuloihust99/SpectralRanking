@@ -125,7 +125,7 @@ class DataGatewayWorker:
                 lookup[item["positive"]["unique_id"]] = {
                     "input": item["input"],
                     **item["positive"],
-                    "concat_tokens": self.tokenizer.convert_tokens_to_ids(
+                    "concat_tokens_ids": self.tokenizer.convert_tokens_to_ids(
                         concat_tokens
                     ),
                 }
@@ -150,7 +150,9 @@ class DataGatewayWorker:
                 lookup[item["negative"]["unique_id"]] = {
                     "input": item["input"],
                     **item["negative"],
-                    "summary_tokens": summary_tokens,
+                    "concat_tokens_ids": self.tokenizer.convert_tokens_to_ids(
+                        concat_tokens
+                    ),
                 }
             else:
                 assert (

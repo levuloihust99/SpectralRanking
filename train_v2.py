@@ -24,7 +24,6 @@ from lib.v2.data_helpers.gateway import DataGateway
 from lib.v2.data_helpers.eval_dataloader import EvalDataLoader
 from lib.v2.nn.trainer import CrossEncoderTrainer
 
-do_setup_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +44,7 @@ def may_setup_distributed():
     if local_rank is None:
         distributed_context["local_rank"] = -1
         distributed_context["world_size"] = 1
+        find_device()
         yield
     else:
         local_rank = int(local_rank)
@@ -52,6 +52,7 @@ def may_setup_distributed():
         dist.init_process_group(backend="nccl", rank=local_rank, world_size=world_size)
         distributed_context["local_rank"] = local_rank
         distributed_context["world_size"] = world_size
+        find_device()
         yield
         dist.destroy_process_group()
 
@@ -85,8 +86,7 @@ def main():
         json.dump(config.model_dump(), writer, indent=4, ensure_ascii=False)
 
     # < INIT TOKENIZER AND MODEL
-    tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_path)
-    pretrained = T5ForConditionalGeneration.from_pretrained(config.model_path)
+    pretrained = T5ForConditionalGeneration.from_pretrained(config.path_to_model)
     model = T5CrossEncoder.from_t5_for_conditional_generation(pretrained)
     # INIT TOKENIZER AND MODEL />
 
@@ -108,7 +108,7 @@ def main():
     # < SETUP DATA PIPELINE
     train_dataloader = DataGateway(config.data_config)
     if config.do_eval:
-        eval_dataloader = EvalDataLoader(config.eval_data_config)
+        eval_dataloader = EvalDataLoader(config.eval_data_config, config.data_config)
     # SETUP DATA PIPELINE />
 
     # < SCHEDULER

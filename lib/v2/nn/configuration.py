@@ -28,8 +28,6 @@ class CrossEncoderConfig(BaseModel):
     warmup_ratio: float = 0.0
     warmup_steps: int = 0
     weight_decay: float = 0.0
-    per_device_train_batch_size: int = 8
-    per_device_eval_batch_size: int = 8
     adam_eps: float = 1e-8
     save_steps: int = 100
     eval_steps: int = 100

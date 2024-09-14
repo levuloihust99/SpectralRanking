@@ -192,7 +192,7 @@ class CrossEncoderTrainer:
                     )
                     t0 = time.perf_counter()
                     for reporter in self.reporters:
-                        reporter.log({"train/loss": 0.0}, step=trained_steps)
+                        reporter.log({"train/loss": loss}, step=trained_steps)
 
                 if self.config.do_eval and trained_steps % self.config.eval_steps == 0:
                     self.evaluate()

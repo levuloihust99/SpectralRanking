@@ -28,11 +28,13 @@ from lib.v2.nn.ctx import distributed_context
 logger = logging.getLogger(__name__)
 
 
-def equal_chunking(items: list, n_chunks: int):
+def equal_chunking(items: list, n_chunks: int, tracker: Optional[dict] = None):
     L = len(items)
     init_chunk_size = L // n_chunks
     remainder = L - init_chunk_size * n_chunks
     added = [1] * remainder + [0] * (n_chunks - remainder)
+    if isinstance(tracker, dict):
+        tracker["added"] = added
     chunk_sizes = [init_chunk_size + added[i] for i in range(n_chunks)]
     idx = 0
     chunks = []
@@ -42,10 +44,12 @@ def equal_chunking(items: list, n_chunks: int):
     return chunks
 
 
-def equal_chunking_with_maxsize(items: list, max_size: int):
+def equal_chunking_with_maxsize(
+    items: list, max_size: int, tracker: Optional[dict] = None
+):
     L = len(items)
     n_chunks = (L - 1) // max_size + 1
-    return equal_chunking(items, n_chunks)
+    return equal_chunking(items, n_chunks, tracker)
 
 
 def get_model_obj(model: torch.nn.Module):
@@ -107,7 +111,7 @@ class CrossEncoderTrainer:
     def checkpoint_state(self):
         return copy.deepcopy(self.trainer_state)
 
-    def fetch_batch(self):
+    def fetch_batch(self, func_tracker: Optional[dict] = None):
         batch = next(self.train_dataloader)
         self.trainer_state["data_state"] = self.train_dataloader.checkpoint_state()
 
@@ -130,11 +134,20 @@ class CrossEncoderTrainer:
         for k, v in lookup.items():
             unique_ids_and_tokens_ids.append((k, v["concat_tokens_ids"]))
         if distributed_context["world_size"] > 1:
+            chunk_tracker = {}
             chunked_unique_ids_and_tokens_ids = equal_chunking(
-                unique_ids_and_tokens_ids, n_chunks=distributed_context["world_size"]
+                unique_ids_and_tokens_ids,
+                n_chunks=distributed_context["world_size"],
+                tracker=chunk_tracker,
             )[distributed_context["local_rank"]]
+            if isinstance(tracker, dict):
+                func_tracker["added"] = chunk_tracker["added"][
+                    distributed_context["local_rank"]
+                ]
         else:
             chunked_unique_ids_and_tokens_ids = unique_ids_and_tokens_ids
+            if isinstance(tracker, dict):
+                func_tracker["added"] = 1
 
         # build tensors
         unique_ids = []
@@ -183,8 +196,11 @@ class CrossEncoderTrainer:
         with self.train_dataloader.pipeline_context():
             t0 = time.perf_counter()
             for step in range(trained_steps, self.config.num_train_steps):
-                batch = self.fetch_batch()
-                loss = self.train_step(batch)  # scalar loss value
+                tracker = {}
+                batch = self.fetch_batch(func_tracker=tracker)
+                loss = self.train_step(
+                    batch, added=tracker["added"]
+                )  # scalar loss value
 
                 # state update and log at the end of the iteration
                 trained_steps = step + 1
@@ -212,7 +228,7 @@ class CrossEncoderTrainer:
                     ):
                         self.save_checkpoint(rng_state)
 
-    def train_step(self, batch):
+    def train_step(self, batch, added: int = 1):
         logger.debug("Local input tensor size: {}".format(batch["input_ids"].size()))
         self.optimizer.zero_grad()
 
@@ -278,7 +294,23 @@ class CrossEncoderTrainer:
                     )
                     surrogate = torch.dot(chunked_scores.flatten(), grad.flatten())
                     surrogate.backward()
-
+            if added == 0:
+                n_chunks = len(list_chunks)
+                possible_n_chunks = (
+                    len(list_inputs) // self.config.grad_cache.max_chunk_size + 1
+                )
+                if n_chunks < possible_n_chunks:
+                    # dummy forward backward
+                    dummy_input_ids = torch.tensor(
+                        [[0]], dtype=torch.int64, device=distributed_context["device"]
+                    )
+                    dummy_attn_mask = torch.tensor(
+                        [[0]], dtype=torch.int64, device=distributed_context["device"]
+                    )
+                    dummy_score = self.model(input_ids=dummy_input_ids, attention_mask=dummy_attn_mask)
+                    zero_grad = torch.zeros_like(dummy_score)
+                    surrogate = torch.dot(dummy_score.flatten(), zero_grad.flatten())
+                    surrogate.backward()
         else:
             scores = self.model(
                 input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]

@@ -215,7 +215,6 @@ class CrossEncoderTrainer:
     def train_step(self, batch):
         logger.debug("Local input tensor size: {}".format(batch["input_ids"].size()))
         self.optimizer.zero_grad()
-        self.model.eval()
 
         if self.config.grad_cache.use is True:
             list_inputs = []

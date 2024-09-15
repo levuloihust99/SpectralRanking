@@ -78,3 +78,5 @@ wandb_api_key:
 wandb_project: SpectralRankingV2
 logging_dir: assets/logs/spectral-ranking-v2
 logging_steps: 10
+
+gather_buf_size: 16384

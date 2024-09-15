@@ -56,6 +56,8 @@ class CrossEncoderConfig(BaseModel):
     logging_dir: str = "assets/logs"
     logging_steps: int = 10
     ggdrive_storage_folder_id: Optional[str] = None
+    
+    gather_buf_size: Optional[PositiveInt] = 16384
 
     @model_validator(mode="before")
     @classmethod

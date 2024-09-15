@@ -6,6 +6,7 @@ import torch
 import shutil
 import random
 import logging
+import itertools
 import numpy as np
 from collections import defaultdict
 from typing import Optional, Union
@@ -15,6 +16,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from transformers import AutoTokenizer
 
+from lib.nn.grad_cache import RandContext
 from lib.nn.modeling import T5CrossEncoder
 from lib.utils.dist_utils import all_gather_list
 from lib.utils.reporters import WandBReporter
@@ -38,6 +40,12 @@ def equal_chunking(items: list, n_chunks: int):
         chunks.append(items[idx : idx + chunk_size])
         idx += chunk_size
     return chunks
+
+
+def equal_chunking_with_maxsize(items: list, max_size: int):
+    L = len(items)
+    n_chunks = (L - 1) // max_size + 1
+    return equal_chunking(items, n_chunks)
 
 
 def get_model_obj(model: torch.nn.Module):
@@ -207,13 +215,100 @@ class CrossEncoderTrainer:
     def train_step(self, batch):
         logger.debug("Local input tensor size: {}".format(batch["input_ids"].size()))
         self.optimizer.zero_grad()
-        scores = self.model(
-            input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
-        )  # [bsz]
-        local_score_map = {}
-        for i, unique_id in enumerate(batch["unique_ids"]):
-            local_score_map[unique_id] = scores[i]
+        self.model.eval()
 
+        if self.config.grad_cache.use is True:
+            list_inputs = []
+            for input_ids, attn_mask in zip(
+                batch["input_ids"], batch["attention_mask"]
+            ):
+                list_inputs.append((input_ids, attn_mask))
+            list_chunks = equal_chunking_with_maxsize(
+                list_inputs, self.config.grad_cache.max_chunk_size
+            )
+            _list_chunks = []
+            for chunk in list_chunks:
+                chunked_input_ids = []
+                chunked_attn_mask = []
+                for input_ids, attn_mask in chunk:
+                    chunked_input_ids.append(input_ids)
+                    chunked_attn_mask.append(attn_mask)
+                chunked_input_ids = torch.stack(chunked_input_ids, dim=0)
+                chunked_attn_mask = torch.stack(chunked_attn_mask, dim=0)
+                _list_chunks.append((chunked_input_ids, chunked_attn_mask))
+            list_chunks = _list_chunks
+
+            # forward no grad
+            rand_contexts = []
+            list_chunked_scores = []
+            with torch.no_grad():
+                for chunked_input_ids, chunked_attn_mask in list_chunks:
+                    rand_contexts.append(
+                        RandContext(chunked_input_ids, chunked_attn_mask)
+                    )
+                    chunked_scores = self.model(
+                        input_ids=chunked_input_ids, attention_mask=chunked_attn_mask
+                    )
+                    list_chunked_scores.append(chunked_scores)
+            for chunked_scores in list_chunked_scores:
+                chunked_scores.requires_grad_()
+
+            local_score_map = {}
+            for unique_id, score in zip(
+                batch["unique_ids"], itertools.chain(*list_chunked_scores)
+            ):
+                local_score_map[unique_id] = score
+
+            global_score_map = self.gather_score_map(local_score_map)
+            step_loss = self.calculate_loss(
+                global_score_map, batch["contrastive_samples"]
+            )
+            scalar_step_loss = step_loss.item()
+            _step_loss = (
+                step_loss * distributed_context["world_size"] * self.config.score_scale
+            )
+            _step_loss.backward()
+
+            list_chunked_scores_grads = [scores.grad for scores in list_chunked_scores]
+            for (input_ids, attn_mask), grad, rnd_ctx in zip(
+                list_chunks, list_chunked_scores_grads, rand_contexts
+            ):
+                with rnd_ctx:
+                    chunked_scores = self.model(
+                        input_ids=input_ids, attention_mask=attn_mask
+                    )
+                    surrogate = torch.dot(chunked_scores.flatten(), grad.flatten())
+                    surrogate.backward()
+
+        else:
+            scores = self.model(
+                input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+            )  # [bsz]
+            local_score_map = {}
+            for i, unique_id in enumerate(batch["unique_ids"]):
+                local_score_map[unique_id] = scores[i]
+
+            global_score_map = self.gather_score_map(local_score_map)
+            step_loss = self.calculate_loss(
+                global_score_map, batch["contrastive_samples"]
+            )
+
+            scalar_step_loss = step_loss.item()
+            _step_loss = (
+                step_loss * distributed_context["world_size"] * self.config.score_scale
+            )
+            _step_loss.backward()
+        if self.config.max_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.config.max_grad_norm
+            )
+
+        self.optimizer.step()
+        self.scheduler.step()
+
+        return scalar_step_loss
+
+    def gather_score_map(self, local_score_map: dict[str, torch.Tensor]):
         if distributed_context["world_size"] > 1:
             all_local_score_maps = all_gather_list(local_score_map)
             global_score_map = {}
@@ -227,31 +322,21 @@ class CrossEncoderTrainer:
                         )
         else:
             global_score_map = local_score_map
+        return global_score_map
 
-        step_loss = []
-        contrastive_samples = batch["contrastive_samples"]
+    def calculate_loss(
+        self, score_map: dict[str, torch.Tensor], contrastive_samples: dict[str, list]
+    ):
+        loss = []
         for positive_id, negatives_ids in contrastive_samples.items():
-            pos_score = global_score_map[positive_id]
-            negs_scores = [global_score_map[neg_id] for neg_id in negatives_ids]
-            pos_and_negs_score = torch.stack(([pos_score] + negs_scores))
-            logits = F.log_softmax(pos_and_negs_score, dim=-1)
-            step_loss.append(logits[0] * -1)
-        step_loss = torch.stack(step_loss)
-        step_loss = torch.mean(step_loss)
-
-        scalar_step_loss = step_loss.item()
-        _step_loss = (
-            step_loss / distributed_context["world_size"] * self.config.score_scale
-        )
-        _step_loss.backward()
-        if self.config.max_grad_norm > 0:
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.config.max_grad_norm
-            )
-        self.optimizer.step()
-        self.scheduler.step()
-
-        return scalar_step_loss
+            pos_score = score_map[positive_id]
+            negs_scores = [score_map[neg_id] for neg_id in negatives_ids]
+            pos_and_negs_scores = torch.stack([pos_score] + negs_scores, dim=0)
+            logits = F.log_softmax(pos_and_negs_scores, dim=-1)
+            loss.append(logits[0] * -1)
+        loss = torch.stack(loss)
+        loss = torch.mean(loss)
+        return loss
 
     def evaluate(self):
         pass

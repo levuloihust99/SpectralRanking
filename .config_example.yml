@@ -24,6 +24,10 @@ data_config:
     model_compare: {}
     negpool: {}
 
+grad_cache:
+  use: false
+  max_chunk_size: 2
+
 # eval data pipeline
 eval_data_config:
   main_data_path: data/v2/compare/byte/eval
@@ -71,6 +75,6 @@ log_level: info
 report_to:
   - wandb
 wandb_api_key:
-wandb_project:
+wandb_project: SpectralRankingV2
 logging_dir: assets/logs/spectral-ranking-v2
 logging_steps: 10

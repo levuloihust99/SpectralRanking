@@ -1,8 +1,13 @@
 from typing import Literal, Optional, Any
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, PositiveInt
 
 from ..data_helpers.schemas import EvalDataConfig
 from ..data_helpers.gateway import DataGatewayConfig
+
+
+class GradCacheConfig(BaseModel):
+    use: bool = False
+    max_chunk_size: PositiveInt = 2
 
 
 class CrossEncoderConfig(BaseModel):
@@ -17,6 +22,8 @@ class CrossEncoderConfig(BaseModel):
     # data pipeline
     data_config: DataGatewayConfig
     eval_data_config: Optional[EvalDataConfig] = None
+    
+    grad_cache: GradCacheConfig
 
     # training
     output_dir: str = "assets/outputs"

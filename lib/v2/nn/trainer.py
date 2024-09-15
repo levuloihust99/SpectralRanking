@@ -309,7 +309,9 @@ class CrossEncoderTrainer:
 
     def gather_score_map(self, local_score_map: dict[str, torch.Tensor]):
         if distributed_context["world_size"] > 1:
-            all_local_score_maps = all_gather_list(local_score_map)
+            all_local_score_maps = all_gather_list(
+                local_score_map, max_size=self.config.gather_buf_size
+            )
             global_score_map = {}
             for score_map in all_local_score_maps:
                 for k, v in score_map.items():

@@ -189,10 +189,15 @@ class CrossEncoderTrainer:
     def train(self):
         self.model.train()
         logger.info("*************** Start training ***************")
-        for reporter in self.reporters:
-            reporter.init_run(
-                project_name=self.config.wandb_project, config=self.config.model_dump()
-            )
+        if (
+            distributed_context["local_rank"] == -1
+            or distributed_context["local_rank"] == 0
+        ):
+            for reporter in self.reporters:
+                reporter.init_run(
+                    project_name=self.config.wandb_project,
+                    config=self.config.model_dump(),
+                )
 
         trained_steps = self.trainer_state.get("trained_steps", 0)
         if trained_steps > 0:

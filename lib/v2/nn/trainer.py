@@ -220,8 +220,12 @@ class CrossEncoderTrainer:
                         )
                     )
                     t0 = time.perf_counter()
-                    for reporter in self.reporters:
-                        reporter.log({"train/loss": loss}, step=trained_steps)
+                    if (
+                        distributed_context["local_rank"] == -1
+                        or distributed_context["local_rank"] == 0
+                    ):
+                        for reporter in self.reporters:
+                            reporter.log({"train/loss": loss}, step=trained_steps)
 
                 if self.config.do_eval and trained_steps % self.config.eval_steps == 0:
                     metrics = self.evaluate()
@@ -522,8 +526,12 @@ class CrossEncoderTrainer:
                 metrics["eval/acc"] = acc
             else:
                 metrics["eval/acc/{}".format(pipeline_type)] = acc
-            for reporter in self.reporters:
-                reporter.log(metrics, step=self.trainer_state["trained_steps"])
+            if (
+                distributed_context["local_rank"] == -1
+                or distributed_context["local_rank"] == 0
+            ):
+                for reporter in self.reporters:
+                    reporter.log(metrics, step=self.trainer_state["trained_steps"])
 
         self.model.train()
         logger.info("Evaluation done in {}s".format(time.perf_counter() - t0))

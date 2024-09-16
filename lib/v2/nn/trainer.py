@@ -8,7 +8,8 @@ import random
 import logging
 import itertools
 import numpy as np
-from collections import defaultdict
+from tqdm import tqdm
+from collections import defaultdict, Counter
 from typing import Optional, Union
 
 import torch.nn.functional as F
@@ -107,6 +108,10 @@ class CrossEncoderTrainer:
         if "data_state" in self.trainer_state:
             logger.info("Restoring data gateway state")
             self.train_dataloader.set_state(self.trainer_state["data_state"])
+        self.trainer_state.update(
+            best_checkpoint=None,
+            best_metric=float("-inf") * int(self.config.greater_is_better),
+        )
 
     def checkpoint_state(self):
         return copy.deepcopy(self.trainer_state)
@@ -219,7 +224,17 @@ class CrossEncoderTrainer:
                         reporter.log({"train/loss": loss}, step=trained_steps)
 
                 if self.config.do_eval and trained_steps % self.config.eval_steps == 0:
-                    self.evaluate()
+                    metrics = self.evaluate()
+                    metric = metrics[self.config.metric_for_best_model]
+                    if self.trainer_state["best_metric"] * int(
+                        self.config.greater_is_better
+                    ) < metric * int(self.config.greater_is_better):
+                        self.trainer_state["best_metric"] = metric
+                        self.trainer_state["best_checkpoint"] = (
+                            "checkpoint-{:06d}".format(
+                                self.trainer_state["trained_steps"]
+                            )
+                        )
                 if trained_steps % self.config.save_steps == 0:
                     rng_state = save_rng_state()
                     if (
@@ -307,7 +322,9 @@ class CrossEncoderTrainer:
                     dummy_attn_mask = torch.tensor(
                         [[0]], dtype=torch.int64, device=distributed_context["device"]
                     )
-                    dummy_score = self.model(input_ids=dummy_input_ids, attention_mask=dummy_attn_mask)
+                    dummy_score = self.model(
+                        input_ids=dummy_input_ids, attention_mask=dummy_attn_mask
+                    )
                     zero_grad = torch.zeros_like(dummy_score)
                     surrogate = torch.dot(dummy_score.flatten(), zero_grad.flatten())
                     surrogate.backward()
@@ -371,8 +388,147 @@ class CrossEncoderTrainer:
         loss = torch.mean(loss)
         return loss
 
+    def transform_eval_batch(self, batch):
+        # chunk batch
+        lookup = batch["lookup"]
+        unique_ids_and_tokens_ids = []
+        for k, v in lookup.items():
+            unique_ids_and_tokens_ids.append((k, v["concat_tokens_ids"]))
+        if distributed_context["world_size"] > 1:
+            chunk_tracker = {}
+            chunked_unique_ids_and_tokens_ids = equal_chunking(
+                unique_ids_and_tokens_ids,
+                n_chunks=distributed_context["world_size"],
+                tracker=chunk_tracker,
+            )[distributed_context["local_rank"]]
+        else:
+            chunked_unique_ids_and_tokens_ids = unique_ids_and_tokens_ids
+
+        # build tensors
+        unique_ids = []
+        batch_input_ids = []
+        max_len = -1
+        for unique_id, tokens_ids in chunked_unique_ids_and_tokens_ids:
+            unique_ids.append(unique_id)
+            batch_input_ids.append(tokens_ids)
+            if max_len < len(tokens_ids):
+                max_len = len(tokens_ids)
+
+        padded_batch_input_ids = []
+        batch_attention_masks = []
+        for input_ids in batch_input_ids:
+            pad_len = max_len - len(input_ids)
+            attn_mask = [1] * len(input_ids) + [0] * pad_len
+            batch_attention_masks.append(attn_mask)
+            padded_input_ids = input_ids + [self.tokenizer.pad_token_id] * pad_len
+            padded_batch_input_ids.append(padded_input_ids)
+        padded_batch_input_ids = torch.tensor(
+            padded_batch_input_ids, device=distributed_context["device"]
+        )
+        batch_attention_masks = torch.tensor(
+            batch_attention_masks, device=distributed_context["device"]
+        )
+
+        return {
+            "unique_ids": unique_ids,
+            "input_ids": padded_batch_input_ids,
+            "attention_mask": batch_attention_masks,
+        }
+
     def evaluate(self):
-        pass
+        logger.info("Running evaluation")
+        self.model.eval()
+
+        total = Counter()
+        matches = Counter()
+        progress_bar = tqdm(desc="Batch")
+        t0 = time.perf_counter()
+
+        with torch.no_grad():
+            for batch in self.eval_dataloader:
+                items = batch["items"]
+                batch = self.transform_eval_batch(batch)
+                if self.config.grad_cache.use is True:
+                    list_inputs = []
+                    for input_ids, attn_mask in zip(
+                        batch["input_ids"], batch["attention_mask"]
+                    ):
+                        list_inputs.append((input_ids, attn_mask))
+                    list_chunks = equal_chunking_with_maxsize(
+                        list_inputs, self.config.grad_cache.max_chunk_size
+                    )
+                    _list_chunks = []
+                    for chunk in list_chunks:
+                        chunked_input_ids = []
+                        chunked_attn_mask = []
+                        for input_ids, attn_mask in chunk:
+                            chunked_input_ids.append(input_ids)
+                            chunked_attn_mask.append(attn_mask)
+                        chunked_input_ids = torch.stack(chunked_input_ids, dim=0)
+                        chunked_attn_mask = torch.stack(chunked_attn_mask, dim=0)
+                        _list_chunks.append((chunked_input_ids, chunked_attn_mask))
+                    list_chunks = _list_chunks
+
+                    # forward no grad
+                    list_chunked_scores = []
+                    for chunked_input_ids, chunked_attn_mask in list_chunks:
+                        chunked_scores = self.model(
+                            input_ids=chunked_input_ids,
+                            attention_mask=chunked_attn_mask,
+                        )
+                        list_chunked_scores.append(chunked_scores)
+
+                    local_score_map = {}
+                    for unique_id, score in zip(
+                        batch["unique_ids"], itertools.chain(*list_chunked_scores)
+                    ):
+                        local_score_map[unique_id] = score.item()
+                else:
+                    scores = self.model(
+                        input_ids=batch["input_ids"],
+                        attention_mask=batch["attention_mask"],
+                    )  # [bsz]
+                    local_score_map = {}
+                    for i, unique_id in enumerate(batch["unique_ids"]):
+                        local_score_map[unique_id] = scores[i].item()
+
+                if distributed_context["world_size"] > 1:
+                    all_local_score_maps = all_gather_list(
+                        local_score_map, max_size=self.config.gather_buf_size
+                    )
+                    global_score_map = {}
+                    for score_map in all_local_score_maps:
+                        for k, v in score_map.items():
+                            global_score_map[k] = v
+                else:
+                    global_score_map = local_score_map
+
+                for item in items:
+                    total["all"] += 1
+                    total[item["type"]] += 1
+                    if (
+                        global_score_map[item["positive"]["unique_id"]]
+                        > global_score_map[item["negative"]["unique_id"]]
+                    ):
+                        matches["all"] += 1
+                        matches[item["type"]] += 1
+
+                progress_bar.update(1)
+
+        metrics = {}
+        for pipeline_type in matches:
+            acc = matches[pipeline_type] / total[pipeline_type]
+            if pipeline_type == "all":
+                metrics["eval/acc"] = acc
+            else:
+                metrics["eval/acc/{}".format(pipeline_type)] = acc
+            for reporter in self.reporters:
+                reporter.log(metrics, step=self.trainer_state["trained_steps"])
+
+        self.model.train()
+        logger.info("Evaluation done in {}s".format(time.perf_counter() - t0))
+        logger.info("Metrics: {}".format(metrics))
+        return metrics
 
     def save_checkpoint(self, rng_state):
         logger.info("Saving checkpoint...")

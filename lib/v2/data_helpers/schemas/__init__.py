@@ -12,6 +12,9 @@ class PipelineType(str, Enum):
     MODEL_COMPARE = "model_compare"
     NEGPOOL = "negpool"
 
+    def __str__(self):
+        return self.value
+
 
 class SlidingConfig(BaseModel):
     type: Literal[PipelineType.SLIDING] = PipelineType.SLIDING

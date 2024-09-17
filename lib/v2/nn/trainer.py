@@ -108,10 +108,11 @@ class CrossEncoderTrainer:
         if "data_state" in self.trainer_state:
             logger.info("Restoring data gateway state")
             self.train_dataloader.set_state(self.trainer_state["data_state"])
-        self.trainer_state.update(
-            best_checkpoint=None,
-            best_metric=float("-inf") * int(self.config.greater_is_better),
-        )
+        else:
+            self.trainer_state.update(
+                best_checkpoint=None,
+                best_metric=float("-inf") * int(self.config.greater_is_better),
+            )
 
     def checkpoint_state(self):
         return copy.deepcopy(self.trainer_state)

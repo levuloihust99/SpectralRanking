@@ -47,13 +47,13 @@ class NLISlidingPipeline(BasePipeline):
         tracker = set()
         iterator = itertools.chain(
             sample["entailment"].values(),
-            sample["neutral"].values(),
-            sample["contradiction"].values(),
+            # sample["neutral"].values(),
+            # sample["contradiction"].values(),
         )
         hypothesis_types = (
             ["entailment"] * len(sample["entailment"])
-            + ["neutral"] * len(sample["neutral"])
-            + ["contradiction"] * len(sample["contradiction"])
+            # + ["neutral"] * len(sample["neutral"])
+            # + ["contradiction"] * len(sample["contradiction"])
         )
         for item, type in zip(iterator, hypothesis_types):
             if item["id"] not in tracker:

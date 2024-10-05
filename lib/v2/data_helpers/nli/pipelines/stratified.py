@@ -43,7 +43,7 @@ class NLIStratifiedPipeline(BasePipeline):
 
         idx = next(self.idxs_generator)
         sample = self.dataset[idx]
-        hypothesis_types = ["entailment", "neutral", "contradiction"]
+        hypothesis_types = ["entailment", "contradiction"]
         L = len(hypothesis_types)
         comparison_types = []
         for i in range(L - 1):

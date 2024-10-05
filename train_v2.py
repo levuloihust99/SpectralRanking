@@ -157,9 +157,13 @@ def main():
                             )
                         )
 
-        model_state = torch.load(os.path.join(cp_path, "model.pth"))
+        model_state = torch.load(
+            os.path.join(cp_path, "model.pth"), map_location=lambda s, t: s
+        )
         get_model_obj(model).load_state_dict(model_state)
-        optimizer_state = torch.load(os.path.join(cp_path, "optimizer.pt"))
+        optimizer_state = torch.load(
+            os.path.join(cp_path, "optimizer.pt"), map_location=lambda s, t: s
+        )
         optimizer.load_state_dict(optimizer_state)
         scheduler_state = torch.load(os.path.join(cp_path, "scheduler.pt"))
         scheduler.load_state_dict(scheduler_state)

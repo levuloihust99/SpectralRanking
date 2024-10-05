@@ -26,6 +26,8 @@ from .pipelines.noncoherence import NoncoherencePipeline, NoncoherencePipelineSt
 from .pipelines.noncoverage import NoncoveragePipeline, NoncoveragePipelineState
 from .pipelines.model_compare import ModelComparePipeline, ModelComparePipelineState
 from .pipelines.negpool import NegPoolPipeline, NegPoolPipelineState
+from .nli.pipelines.sliding import NLISlidingPipelineState, NLISlidingPipeline
+from .nli.pipelines.stratified import NLIStratifiedPipelineState, NLIStratifiedPipeline
 
 from .schemas import PipelineType, DataGatewayConfig
 
@@ -39,6 +41,8 @@ PIPELINE_CONSTRUCTOR_MAP = {
     PipelineType.NON_COVERAGE: NoncoveragePipeline,
     PipelineType.MODEL_COMPARE: ModelComparePipeline,
     PipelineType.NEGPOOL: NegPoolPipeline,
+    PipelineType.NLI_SLIDING: NLISlidingPipeline,
+    PipelineType.NLI_STRATIFIED: NLIStratifiedPipeline,
 }
 
 
@@ -49,12 +53,19 @@ PIPELINE_STATE_MAP = {
     PipelineType.NON_COVERAGE: NoncoveragePipelineState,
     PipelineType.MODEL_COMPARE: ModelComparePipelineState,
     PipelineType.NEGPOOL: NegPoolPipelineState,
+    PipelineType.NLI_SLIDING: NLISlidingPipelineState,
+    PipelineType.NLI_STRATIFIED: NLIStratifiedPipelineState,
 }
 
 PipelineUnion = Union[
     NoncoveragePipeline,
+    NonconcisenessPipeline,
+    NoncoherencePipeline,
     ModelComparePipeline,
     NegPoolPipeline,
+    SlidingPipeline,
+    NLISlidingPipeline,
+    NLIStratifiedPipeline,
 ]
 
 

@@ -11,6 +11,8 @@ class PipelineType(str, Enum):
     NON_COVERAGE = "noncoverage"
     MODEL_COMPARE = "model_compare"
     NEGPOOL = "negpool"
+    NLI_SLIDING = "nli_sliding"
+    NLI_STRATIFIED = "nli_stratified"
 
     def __str__(self):
         return self.value
@@ -20,7 +22,7 @@ class SlidingConfig(BaseModel):
     type: Literal[PipelineType.SLIDING] = PipelineType.SLIDING
 
     dataset_path: str
-    buffer_size: int
+    buffer_size: PositiveInt
     contrastive_size: PositiveInt
 
 
@@ -61,6 +63,21 @@ class NegPoolConfig(BaseModel):
     contrastive_size: PositiveInt
 
 
+class NLISlidingConfig(BaseModel):
+    type: Literal[PipelineType.NLI_SLIDING] = PipelineType.NLI_SLIDING
+
+    dataset_path: str
+    buffer_size: PositiveInt
+    contrastive_size: PositiveInt
+
+
+class NLIStratifiedConfig(BaseModel):
+    type: Literal[PipelineType.NLI_STRATIFIED] = PipelineType.NLI_STRATIFIED
+
+    dataset_path: str
+    buffer_size: PositiveInt
+
+
 PipelineConfig = Annotated[
     Union[
         SlidingConfig,
@@ -69,6 +86,8 @@ PipelineConfig = Annotated[
         NoncoverageConfig,
         ModelCompareConfig,
         NegPoolConfig,
+        NLISlidingConfig,
+        NLIStratifiedConfig,
     ],
     Field(discriminator="type"),
 ]
@@ -152,12 +171,18 @@ class DataGatewayConfig(BaseModel):
                 PipelineType.NON_COHERENCE,
                 PipelineType.NON_COVERAGE,
                 PipelineType.MODEL_COMPARE,
+                PipelineType.NLI_SLIDING,
+                PipelineType.NLI_STRATIFIED,
             }:
                 if "dataset_path" not in pipeline_config:
                     pipeline_config["dataset_path"] = data["main_data_path"]
                 if "buffer_size" not in pipeline_config:
                     pipeline_config["buffer_size"] = data["buffer_size"]
-            if pipeline_type in {PipelineType.SLIDING, PipelineType.NEGPOOL}:
+            if pipeline_type in {
+                PipelineType.SLIDING,
+                PipelineType.NEGPOOL,
+                PipelineType.NLI_SLIDING,
+            }:
                 if "contrastive_size" not in pipeline_config:
                     pipeline_config["contrastive_size"] = data["contrastive_size"]
             if pipeline_type == PipelineType.NEGPOOL:
